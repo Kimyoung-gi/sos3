@@ -77,7 +77,7 @@ class _LoginPageState extends State<LoginPage> {
                 children: [
                   Image.asset(
                     'assets/images/sos_logo.png',
-                    height: 80,
+                    height: 40,
                     fit: BoxFit.contain,
                     filterQuality: FilterQuality.high,
                   ),

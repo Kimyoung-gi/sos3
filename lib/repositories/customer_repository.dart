@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/customer.dart';
+import '../models/merge_result.dart';
 import '../models/user.dart';
 import '../services/permission_service.dart';
 
@@ -55,14 +56,78 @@ class CustomerRepository {
   }
 
   /// RBAC: 로그인 사용자 권한에 따라 조회 범위 적용
+  /// Admin 사용자는 필터링을 건너뛰고 전체 고객을 반환
   Future<List<Customer>> getFiltered(User? user) async {
     final all = await _loadAll();
+    
+    // Admin 사용자는 항상 ALL 권한으로 처리 (필터링 건너뛰기)
+    if (user != null && user.role == UserRole.admin) {
+      debugPrint('CustomerRepository.getFiltered: Admin 사용자 - 필터링 건너뛰고 전체 고객 반환 (${all.length}건)');
+      return List<Customer>.from(all);
+    }
+    
     return PermissionService.filterByScope(user, all);
   }
 
   Future<List<Customer>> getAll() => _loadAll();
 
   Future<void> saveAll(List<Customer> list) => _saveAll(list);
+
+  /// 고객 데이터 완전 삭제 (CSV 교체 시 사용)
+  Future<void> clearCustomers() async {
+    final prefs = await _prefs();
+    await prefs.remove(_key);
+    debugPrint('🗑️ CustomerRepository: 모든 고객 데이터 삭제 완료');
+  }
+
+  /// CSV 파싱 결과로 완전 교체 (기존 데이터 삭제 후 새 데이터 저장)
+  /// status, memo, favorites는 유지 (기존 키와 매칭되는 경우)
+  Future<MergeResult> replaceFromCsv(List<Customer> parsed) async {
+    // 로딩 전 기존 count
+    final existingBefore = await _loadAll();
+    final beforeCount = existingBefore.length;
+    debugPrint('📊 [REPLACE] 로딩 전 기존 고객 수: $beforeCount건');
+
+    // 기존 status, memo, favorites 백업
+    final statusRaw = await _prefs().then((p) => p.getString(_keyStatus));
+    final memoRaw = await _prefs().then((p) => p.getString(_keyMemo));
+    final favList = await getFavorites();
+    final statusMap = statusRaw != null && statusRaw.isNotEmpty
+        ? (jsonDecode(statusRaw) as Map<String, dynamic>?)?.map((k, v) => MapEntry(k as String, v?.toString() ?? '')) ?? {}
+        : <String, String>{};
+    final memoMap = memoRaw != null && memoRaw.isNotEmpty
+        ? (jsonDecode(memoRaw) as Map<String, dynamic>?)?.map((k, v) => MapEntry(k as String, v?.toString() ?? '')) ?? {}
+        : <String, String>{};
+
+    // 기존 데이터 완전 삭제
+    await clearCustomers();
+    debugPrint('🗑️ [REPLACE] clear 후 고객 수: 0건');
+
+    // 새 데이터에 기존 status, memo, favorites 적용
+    final replaced = parsed.map((c) {
+      var next = c;
+      final k = c.customerKey;
+      if (statusMap[k] != null) next = next.copyWith(salesStatus: statusMap[k]!);
+      if (memoMap[k] != null) next = next.copyWith(memo: memoMap[k]!);
+      if (favList.contains(k)) next = next.copyWith(isFavorite: true);
+      return next;
+    }).toList();
+
+    // 새 데이터 저장
+    await _saveAll(replaced);
+    
+    final afterCount = replaced.length;
+    debugPrint('✅ [REPLACE] 로딩 후 고객 수: $afterCount건 (기존: $beforeCount건 → 새: $afterCount건)');
+
+    return MergeResult(
+      total: parsed.length,
+      success: replaced.length,
+      fail: 0,
+      skipped: 0,
+      updated: 0,
+      failReasonsTop3: [],
+    );
+  }
 
   Future<void> setStatus(String customerKey, String status) async {
     final prefs = await _prefs();
@@ -149,22 +214,4 @@ class CustomerRepository {
       failReasonsTop3: failReasons.entries.take(3).map((e) => '${e.key}: ${e.value}').toList(),
     );
   }
-}
-
-class MergeResult {
-  final int total;
-  final int success;
-  final int fail;
-  final int skipped;
-  final int updated;
-  final List<String> failReasonsTop3;
-
-  MergeResult({
-    required this.total,
-    required this.success,
-    required this.fail,
-    required this.skipped,
-    required this.updated,
-    required this.failReasonsTop3,
-  });
 }

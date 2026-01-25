@@ -22,23 +22,55 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 import 'dart:async';
 
 // [AUTH] 인증/저장소 import
 import 'services/auth_service.dart';
+import 'services/csv_service.dart';
+import 'services/csv_reload_bus.dart';
+import 'models/user.dart';
 import 'repositories/user_repository.dart';
 import 'repositories/customer_repository.dart';
+import 'repositories/sales_status_repository.dart';
+import 'repositories/performance_repository.dart';
+import 'repositories/upload_history_repository.dart';
 import 'utils/customer_converter.dart';
+import 'utils/csv_parser_extended.dart';
 import 'ui/pages/login_page.dart';
 import 'ui/pages/admin_login_page.dart';
 import 'ui/pages/admin_home_page.dart';
 
 void main() async {
+  // Flutter 바인딩 초기화 (필수)
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // [FIREBASE] Firebase 초기화 (필수)
+  // flutterfire configure로 생성된 firebase_options.dart 사용
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    debugPrint('✅ Firebase 초기화 완료');
+  } catch (e, stackTrace) {
+    debugPrint('❌ Firebase 초기화 실패: $e');
+    debugPrint('스택 트레이스: $stackTrace');
+    // Firebase 초기화 실패 시에도 앱은 계속 실행 (assets fallback 사용)
+    // 하지만 Firebase 기능(Storage, Firestore 등)은 사용할 수 없음
+  }
   
   // [AUTH] 서비스 초기화
   final authService = AuthService();
   await authService.init();
+  
+  // [CSV] Firebase Storage 연동 테스트 (선택)
+  try {
+    final testCsv = await CsvService.load('customerlist.csv');
+    debugPrint('✅ CSV 로딩 테스트 성공: customerlist.csv (${testCsv.length} bytes)');
+  } catch (e) {
+    debugPrint('⚠️ CSV 로딩 테스트 실패 (앱은 계속 실행): $e');
+  }
   
   runApp(
     MultiProvider(
@@ -46,6 +78,9 @@ void main() async {
         ChangeNotifierProvider.value(value: authService),
         Provider.value(value: UserRepository()),
         Provider.value(value: CustomerRepository()),
+        Provider.value(value: SalesStatusRepository()),
+        Provider.value(value: PerformanceRepository()),
+        Provider.value(value: UploadHistoryRepository()),
       ],
       child: const SOSApp(),
     ),
@@ -499,6 +534,11 @@ class _CustomerListByHqScreenState extends State<CustomerListByHqScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   
+  // [CSV_RELOAD] 이벤트 구독 및 debounce
+  StreamSubscription<String>? _csvReloadSubscription;
+  Timer? _reloadDebounceTimer;
+  bool _isReloading = false;
+  
   final List<String> _salesStatusOptions = ['영업전', '영업중', '영업실패', '영업성공'];
 
   @override
@@ -506,25 +546,86 @@ class _CustomerListByHqScreenState extends State<CustomerListByHqScreen> {
     super.initState();
     _loadCsvData();
     _searchController.addListener(_filterCustomers);
+    _setupCsvReloadListener();
   }
 
   @override
   void dispose() {
+    _csvReloadSubscription?.cancel();
+    _reloadDebounceTimer?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+  
+  // [CSV_RELOAD] CSV 재로드 이벤트 구독 설정
+  void _setupCsvReloadListener() {
+    _csvReloadSubscription = CsvReloadBus().stream.listen((filename) {
+      // 고객사 파일인 경우에만 재로드
+      if (isCustomerFile(filename)) {
+        debugPrint('[고객사] 고객사 파일 재로드 이벤트 수신: $filename');
+        _handleCsvReload(filename);
+      }
+    });
+  }
+  
+  // [CSV_RELOAD] CSV 재로드 처리 (debounce 300ms)
+  void _handleCsvReload(String filename) {
+    // 중복 로딩 방지
+    if (_isReloading || _isLoading) {
+      debugPrint('[고객사] 이미 로딩 중이므로 재로드 건너뜀');
+      return;
+    }
+    
+    // debounce: 300ms 대기
+    _reloadDebounceTimer?.cancel();
+    _reloadDebounceTimer = Timer(const Duration(milliseconds: 300), () {
+      if (mounted && !_isReloading && !_isLoading) {
+        debugPrint('[고객사] CSV 재로드 시작: $filename');
+        _loadCsvData();
+      }
+    });
   }
 
   // [RBAC] Repository에서 로드 및 권한 필터링
   Future<void> _loadCsvData() async {
+    // 중복 로딩 방지
+    if (_isReloading || _isLoading) {
+      debugPrint('[고객사] 이미 로딩 중이므로 건너뜀');
+      return;
+    }
+    
     try {
+      setState(() {
+        _isReloading = true;
+        _isLoading = true;
+      });
+      
       debugPrint('고객사 데이터 로딩 시작 (Repository + RBAC)...');
       final authService = context.read<AuthService>();
       final customerRepo = context.read<CustomerRepository>();
       final currentUser = authService.currentUser;
       
+      // [CSV] Firebase Storage에서 customerlist.csv 로드 시도 (없으면 assets fallback)
+      try {
+        final csvText = await CsvService.load('customerlist.csv');
+        if (csvText.isNotEmpty) {
+          debugPrint('customerlist.csv 로드 성공, 파싱 시작...');
+          final rows = CsvParserExtended.parseCustomerBase(csvText);
+          final validCustomers = rows.where((r) => r.data != null).map((r) => r.data!).toList();
+          if (validCustomers.isNotEmpty) {
+            debugPrint('customerlist.csv에서 ${validCustomers.length}건 파싱, Repository에 교체(REPLACE)...');
+            await customerRepo.replaceFromCsv(validCustomers); // 기존 데이터 완전 교체
+            debugPrint('customerlist.csv 교체 완료');
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ customerlist.csv 로드 실패 (무시): $e');
+      }
+      
       // RBAC 필터링된 고객 목록 가져오기
       final customers = await customerRepo.getFiltered(currentUser);
-      debugPrint('RBAC 필터링 후 고객 수: ${customers.length}건 (사용자: ${currentUser?.id ?? "없음"}, 권한: ${currentUser?.scopeLabel ?? "없음"})');
+      final scopeLabel = currentUser?.role == UserRole.admin ? 'ALL' : (currentUser?.scopeLabel ?? '없음');
+      debugPrint('RBAC 필터링 후 고객 수: ${customers.length}건 (사용자: ${currentUser?.id ?? "없음"}, 권한: $scopeLabel)');
       
       // 선택된 본부로 필터링 (앞 2글자 기준)
       final filteredCustomers = customers.where((c) {
@@ -538,20 +639,26 @@ class _CustomerListByHqScreenState extends State<CustomerListByHqScreen> {
       final customerDataList = CustomerConverter.toCustomerDataList(filteredCustomers);
       
       debugPrint('본부 필터링 후: ${customerDataList.length}건');
-      setState(() {
-        _allCustomers = customerDataList;
-        _filteredCustomers = customerDataList;
-        _isLoading = false;
-        _errorMessage = null;
-      });
-      _filterCustomers();
+      if (mounted) {
+        setState(() {
+          _allCustomers = customerDataList;
+          _filteredCustomers = customerDataList;
+          _isLoading = false;
+          _isReloading = false;
+          _errorMessage = null;
+        });
+        _filterCustomers();
+      }
     } catch (e, stackTrace) {
       debugPrint('❌ 데이터 로딩 오류: $e');
       debugPrint('스택 트레이스: $stackTrace');
-      setState(() {
-        _isLoading = false;
-        _errorMessage = '고객사 데이터를 불러올 수 없습니다: ${e.toString()}';
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isReloading = false;
+          _errorMessage = '고객사 데이터를 불러올 수 없습니다: ${e.toString()}';
+        });
+      }
     }
   }
 
@@ -1084,9 +1191,27 @@ class _CustomerListScreenState extends State<CustomerListScreen> {
       final customerRepo = context.read<CustomerRepository>();
       final currentUser = authService.currentUser;
       
+      // [CSV] Firebase Storage에서 customerlist.csv 로드 시도 (없으면 assets fallback)
+      try {
+        final csvText = await CsvService.load('customerlist.csv');
+        if (csvText.isNotEmpty) {
+          debugPrint('customerlist.csv 로드 성공, 파싱 시작...');
+          final rows = CsvParserExtended.parseCustomerBase(csvText);
+          final validCustomers = rows.where((r) => r.data != null).map((r) => r.data!).toList();
+          if (validCustomers.isNotEmpty) {
+            debugPrint('customerlist.csv에서 ${validCustomers.length}건 파싱, Repository에 교체(REPLACE)...');
+            await customerRepo.replaceFromCsv(validCustomers); // 기존 데이터 완전 교체
+            debugPrint('customerlist.csv 교체 완료');
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ customerlist.csv 로드 실패 (무시): $e');
+      }
+      
       // RBAC 필터링된 고객 목록 가져오기
       final customers = await customerRepo.getFiltered(currentUser);
-      debugPrint('RBAC 필터링 후 고객 수: ${customers.length}건 (사용자: ${currentUser?.id ?? "없음"}, 권한: ${currentUser?.scopeLabel ?? "없음"})');
+      final scopeLabel = currentUser?.role == UserRole.admin ? 'ALL' : (currentUser?.scopeLabel ?? '없음');
+      debugPrint('RBAC 필터링 후 고객 수: ${customers.length}건 (사용자: ${currentUser?.id ?? "없음"}, 권한: $scopeLabel)');
       
       // Customer -> CustomerData 변환
       final customerDataList = CustomerConverter.toCustomerDataList(customers);
@@ -2517,7 +2642,8 @@ class _FrontierCenterSelectionScreenState extends State<FrontierCenterSelectionS
   Future<void> _loadCsvData() async {
     try {
       debugPrint('프론티어 CSV 파일 로딩 시작...');
-      final String staffCsv = await rootBundle.loadString('assets/kpi_info.csv');
+      // [CSV] Firebase Storage에서 CSV 로드 (없으면 assets fallback)
+      final String staffCsv = await CsvService.load('kpi-info.csv');
       final List<FrontierData> frontiers = _parseStaffCsv(staffCsv);
       
       // 선택된 본부로 필터링
@@ -2806,11 +2932,19 @@ class _FrontierListByCenterScreenState extends State<FrontierListByCenterScreen>
   Future<void> _loadCsvData() async {
     try {
       debugPrint('프론티어 CSV 파일 로딩 시작...');
-      final String staffCsv = await rootBundle.loadString('assets/kpi_info.csv');
-      final String wirelessCsv = await rootBundle.loadString('assets/kpi_mobile.csv');
-      final String wiredNewCsv = await rootBundle.loadString('assets/kpi_it.csv');
-      final String wiredRenewCsv = await rootBundle.loadString('assets/kpi_itr.csv');
-      final String etcCsv = await rootBundle.loadString('assets/kpi_etc.csv');
+      // [CSV] Firebase Storage에서 CSV 로드 (없으면 assets fallback)
+      final csvs = await CsvService.loadMultiple([
+        'kpi-info.csv',
+        'kpi_mobile.csv',
+        'kpi_it.csv',
+        'kpi_itr.csv',
+        'kpi_etc.csv',
+      ]);
+      final String staffCsv = csvs['kpi-info.csv'] ?? '';
+      final String wirelessCsv = csvs['kpi_mobile.csv'] ?? '';
+      final String wiredNewCsv = csvs['kpi_it.csv'] ?? '';
+      final String wiredRenewCsv = csvs['kpi_itr.csv'] ?? '';
+      final String etcCsv = csvs['kpi_etc.csv'] ?? '';
 
       final List<FrontierData> frontiers = _parseStaffCsv(staffCsv);
       // 선택된 본부와 센터로 필터링
@@ -3323,15 +3457,25 @@ class _FrontierScreenState extends State<FrontierScreen> {
   Future<void> _loadCsvData() async {
     try {
       debugPrint('프론티어 CSV 파일 로딩 시작...');
-      final String staffCsv = await rootBundle.loadString('assets/kpi_info.csv');
+      // [CSV] Firebase Storage에서 CSV 로드 (없으면 assets fallback)
+      // [CSV] 병렬 로딩으로 성능 최적화
+      final csvResults = await CsvService.loadMultiple([
+        'kpi-info.csv',
+        'kpi_mobile.csv',
+        'kpi_it.csv',
+        'kpi_itr.csv',
+        'kpi_etc.csv',
+      ]);
+      
+      final String staffCsv = csvResults['kpi-info.csv'] ?? '';
       debugPrint('인력정보 CSV 로딩 완료: ${staffCsv.length}자');
-      final String wirelessCsv = await rootBundle.loadString('assets/kpi_mobile.csv');
+      final String wirelessCsv = csvResults['kpi_mobile.csv'] ?? '';
       debugPrint('무선 CSV 로딩 완료: ${wirelessCsv.length}자');
-      final String wiredNewCsv = await rootBundle.loadString('assets/kpi_it.csv');
+      final String wiredNewCsv = csvResults['kpi_it.csv'] ?? '';
       debugPrint('유선순신규 CSV 로딩 완료: ${wiredNewCsv.length}자');
-      final String wiredRenewCsv = await rootBundle.loadString('assets/kpi_itr.csv');
+      final String wiredRenewCsv = csvResults['kpi_itr.csv'] ?? '';
       debugPrint('유선약정갱신 CSV 로딩 완료: ${wiredRenewCsv.length}자');
-      final String etcCsv = await rootBundle.loadString('assets/kpi_etc.csv');
+      final String etcCsv = csvResults['kpi_etc.csv'] ?? '';
       debugPrint('기타상품 CSV 로딩 완료: ${etcCsv.length}자');
 
       final List<FrontierData> frontiers = _parseStaffCsv(staffCsv);
@@ -4254,6 +4398,7 @@ class _FrontierDetailScreenState extends State<FrontierDetailScreen>
     try {
       // 포인트 순위정보 CSV 로드
       try {
+        // [FIREBASE] kpi_rank.csv는 현재 CsvFileKey에 없으므로 assets에서 직접 로드 (필요시 추가)
         final String pointRankCsv = await rootBundle.loadString('assets/kpi_rank.csv');
         debugPrint('포인트 순위정보 CSV 원본 길이: ${pointRankCsv.length}자');
         _pointRankData = _parsePointRankCsv(pointRankCsv);
@@ -4267,14 +4412,23 @@ class _FrontierDetailScreenState extends State<FrontierDetailScreen>
       }
 
       // 인력정보에서 업무시작일 로드
-      final String staffCsv = await rootBundle.loadString('assets/kpi_info.csv');
+      // [CSV] Firebase Storage에서 CSV 로드 (없으면 assets fallback)
+      final String staffCsv = await CsvService.load('kpi-info.csv');
       final parsedWorkStartDate = _parseWorkStartDate(staffCsv);
       debugPrint('업무시작일 로드 결과: $parsedWorkStartDate');
 
-      final String wirelessCsv = await rootBundle.loadString('assets/kpi_mobile.csv');
-      final String wiredNewCsv = await rootBundle.loadString('assets/kpi_it.csv');
-      final String wiredRenewCsv = await rootBundle.loadString('assets/kpi_itr.csv');
-      final String etcCsv = await rootBundle.loadString('assets/kpi_etc.csv');
+      // [CSV] 병렬 로딩으로 성능 최적화
+      final csvResults = await CsvService.loadMultiple([
+        'kpi_mobile.csv',
+        'kpi_it.csv',
+        'kpi_itr.csv',
+        'kpi_etc.csv',
+      ]);
+      
+      final String wirelessCsv = csvResults['kpi_mobile.csv'] ?? '';
+      final String wiredNewCsv = csvResults['kpi_it.csv'] ?? '';
+      final String wiredRenewCsv = csvResults['kpi_itr.csv'] ?? '';
+      final String etcCsv = csvResults['kpi_etc.csv'] ?? '';
 
       final List<PerformanceData> performances = [];
       performances.addAll(_parsePerformanceCsv(wirelessCsv, '무선'));
@@ -5806,6 +5960,11 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   bool _isLoading = true;
   String? _errorMessage;
   late TabController _tabController;
+  
+  // [CSV_RELOAD] 이벤트 구독 및 debounce
+  StreamSubscription<String>? _csvReloadSubscription;
+  Timer? _reloadDebounceTimer;
+  bool _isReloading = false;
 
   // [DASH] 전체현황 KPI 집계
   Map<String, int> _overallKpi = {'무선': 0, '유선': 0, '약갱': 0, '기타': 0};
@@ -5819,29 +5978,75 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _loadKpiData();
+    _setupCsvReloadListener();
   }
 
   @override
   void dispose() {
+    _csvReloadSubscription?.cancel();
+    _reloadDebounceTimer?.cancel();
     _tabController.dispose();
     super.dispose();
+  }
+  
+  // [CSV_RELOAD] CSV 재로드 이벤트 구독 설정
+  void _setupCsvReloadListener() {
+    _csvReloadSubscription = CsvReloadBus().stream.listen((filename) {
+      // KPI 파일인 경우에만 재로드
+      if (isKpiFile(filename)) {
+        debugPrint('[DASH] KPI 파일 재로드 이벤트 수신: $filename');
+        _handleCsvReload(filename);
+      }
+    });
+  }
+  
+  // [CSV_RELOAD] CSV 재로드 처리 (debounce 300ms)
+  void _handleCsvReload(String filename) {
+    // 중복 로딩 방지
+    if (_isReloading || _isLoading) {
+      debugPrint('[DASH] 이미 로딩 중이므로 재로드 건너뜀');
+      return;
+    }
+    
+    // debounce: 300ms 대기
+    _reloadDebounceTimer?.cancel();
+    _reloadDebounceTimer = Timer(const Duration(milliseconds: 300), () {
+      if (mounted && !_isReloading && !_isLoading) {
+        debugPrint('[DASH] CSV 재로드 시작: $filename');
+        _loadKpiData();
+      }
+    });
   }
 
   // [DASH] KPI CSV 로딩/캐싱
   Future<void> _loadKpiData() async {
+    // 중복 로딩 방지
+    if (_isReloading || _isLoading) {
+      debugPrint('[DASH] 이미 로딩 중이므로 건너뜀');
+      return;
+    }
+    
     try {
       setState(() {
+        _isReloading = true;
         _isLoading = true;
         _errorMessage = null;
       });
 
       debugPrint('[DASH] KPI CSV 파일 로딩 시작...');
       
-      // 4개 CSV 파일 로드
-      final String mobileCsv = await rootBundle.loadString('assets/kpi_mobile.csv');
-      final String itCsv = await rootBundle.loadString('assets/kpi_it.csv');
-      final String itrCsv = await rootBundle.loadString('assets/kpi_itr.csv');
-      final String etcCsv = await rootBundle.loadString('assets/kpi_etc.csv');
+      // [CSV] 4개 CSV 파일 병렬 로드
+      final csvResults = await CsvService.loadMultiple([
+        'kpi_mobile.csv',
+        'kpi_it.csv',
+        'kpi_itr.csv',
+        'kpi_etc.csv',
+      ]);
+      
+      final String mobileCsv = csvResults['kpi_mobile.csv'] ?? '';
+      final String itCsv = csvResults['kpi_it.csv'] ?? '';
+      final String itrCsv = csvResults['kpi_itr.csv'] ?? '';
+      final String etcCsv = csvResults['kpi_etc.csv'] ?? '';
 
       // CSV 파싱
       final List<Map<String, dynamic>> allData = [];
@@ -5877,25 +6082,31 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
         return bInt.compareTo(aInt); // 내림차순
       });
 
-      setState(() {
-        _allKpiData = allData;
-        _availableYearMonths = sortedYearMonths.toSet();
-        // [FIX] 초기: 가장 최근 연월 1개만 선택
-        _selectedYearMonths = sortedYearMonths.isNotEmpty 
-            ? {sortedYearMonths.first} 
-            : <String>{};
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _allKpiData = allData;
+          _availableYearMonths = sortedYearMonths.toSet();
+          // [FIX] 초기: 가장 최근 연월 1개만 선택
+          _selectedYearMonths = sortedYearMonths.isNotEmpty 
+              ? {sortedYearMonths.first} 
+              : <String>{};
+          _isLoading = false;
+          _isReloading = false;
+        });
 
-      _calculateKpi();
-      debugPrint('[DASH] KPI 데이터 로딩 완료: ${allData.length}건, 연월 ${sortedYearMonths.length}개');
+        _calculateKpi();
+        debugPrint('[DASH] KPI 데이터 로딩 완료: ${allData.length}건, 연월 ${sortedYearMonths.length}개');
+      }
     } catch (e, stackTrace) {
       debugPrint('[DASH] ❌ CSV 로딩 오류: $e');
       debugPrint('스택 트레이스: $stackTrace');
-      setState(() {
-        _isLoading = false;
-        _errorMessage = '대시보드 데이터를 불러올 수 없습니다: ${e.toString()}';
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isReloading = false;
+          _errorMessage = '대시보드 데이터를 불러올 수 없습니다: ${e.toString()}';
+        });
+      }
     }
   }
 

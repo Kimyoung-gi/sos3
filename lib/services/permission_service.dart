@@ -6,6 +6,12 @@ class PermissionService {
   /// 현재 사용자 기준으로 고객 목록 필터링 (Repository에서 사용)
   static List<Customer> filterByScope(User? user, List<Customer> list) {
     if (user == null) return [];
+    
+    // Admin 사용자는 항상 ALL 권한으로 처리 (필터링 건너뛰기)
+    if (user.role == UserRole.admin) {
+      return List<Customer>.from(list);
+    }
+    
     switch (user.scope) {
       case UserScope.self:
         final sn = user.sellerName?.trim();
