@@ -32,13 +32,13 @@ class CsvUploadService {
   /// CSV 파일 업로드
   /// 
   /// [fileBytes]: 파일 바이트 데이터
-  /// [fileKey]: CSV 파일 키
+  /// [filename]: CSV 파일명 (예: 'customerlist.csv')
   /// [uploadedBy]: 업로더 UID 또는 이메일
   /// 
   /// 반환: 업로드 결과
   Future<CsvUploadResult> uploadCsv({
     required List<int> fileBytes,
-    required CsvFileKey fileKey,
+    required String filename,
     required String uploadedBy,
   }) async {
     try {
@@ -53,10 +53,11 @@ class CsvUploadService {
         );
       }
 
-      // Firebase Storage에 업로드
-      final storageRef = _storage.ref(fileKey.storagePath);
+      // Firebase Storage 경로 생성
+      final storagePath = 'csv_files/$filename';
+      final storageRef = _storage.ref(storagePath);
       
-      debugPrint('📤 Firebase Storage 업로드 시작: ${fileKey.storagePath}');
+      debugPrint('📤 Firebase Storage 업로드 시작: $storagePath');
       
       // 메타데이터 설정 (캐시 방지를 위해 업로드 시간 포함)
       final metadata = SettableMetadata(
@@ -87,9 +88,9 @@ class CsvUploadService {
       // Firestore에 업로드 히스토리 기록
       try {
         await _firestore.collection('csv_upload_history').add({
-          'type': fileKey.filename,
-          'filename': fileKey.filename,
-          'storagePath': fileKey.storagePath,
+          'type': filename,
+          'filename': filename,
+          'storagePath': storagePath,
           'downloadUrl': downloadUrl,
           'uploadedBy': uploadedBy,
           'uploadedAt': FieldValue.serverTimestamp(),
@@ -103,7 +104,7 @@ class CsvUploadService {
       }
 
       // CSV 캐시 무효화
-      CsvService().invalidateCache(fileKey);
+      CsvService.invalidate(filename);
 
       return CsvUploadResult(
         success: true,
@@ -117,10 +118,11 @@ class CsvUploadService {
 
       // Firestore에 실패 기록
       try {
+        final storagePath = 'csv_files/$filename';
         await _firestore.collection('csv_upload_history').add({
-          'type': fileKey.filename,
-          'filename': fileKey.filename,
-          'storagePath': fileKey.storagePath,
+          'type': filename,
+          'filename': filename,
+          'storagePath': storagePath,
           'uploadedBy': uploadedBy,
           'uploadedAt': FieldValue.serverTimestamp(),
           'size': fileBytes.length,

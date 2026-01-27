@@ -130,4 +130,15 @@ class UserRepository {
     }
     await _save(users, passwords);
   }
+
+  Future<void> delete(User user) async {
+    final users = await _load();
+    final passwords = await _loadPasswords();
+    final i = users.indexWhere((e) => e.id == user.id && e.isAdmin == user.isAdmin);
+    if (i < 0) throw Exception('사용자를 찾을 수 없습니다.');
+    users.removeAt(i);
+    final key = user.isAdmin ? '${user.id}_admin' : '${user.id}_user';
+    passwords.remove(key);
+    await _save(users, passwords);
+  }
 }

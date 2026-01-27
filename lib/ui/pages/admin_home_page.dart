@@ -87,6 +87,16 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
         actions: [
           Text('${auth.currentUser?.name ?? ''} (${auth.currentUser?.roleLabel ?? ''})', style: const TextStyle(fontSize: 14)),
           const SizedBox(width: 16),
+          // 일반 페이지로 이동 버튼 (Admin만 표시)
+          if (auth.isAdmin)
+            IconButton(
+              icon: const Icon(Icons.home),
+              tooltip: '일반 페이지로 이동',
+              onPressed: () {
+                context.go('/main');
+              },
+            ),
+          const SizedBox(width: 8),
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: '로그아웃',
@@ -807,6 +817,64 @@ class _UserManagementTabState extends State<_UserManagementTab> {
     }
   }
 
+  Future<void> _showDeleteDialog(User user) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('사용자 삭제'),
+        content: Text('정말 "${user.name}" 사용자를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await context.read<UserRepository>().delete(user);
+        await _loadUsers();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('사용자가 삭제되었습니다.'), backgroundColor: Colors.green),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('삭제 실패: $e'), backgroundColor: Colors.red),
+          );
+        }
+      }
+    }
+  }
+
+  // 권한 라벨 변환
+  String _roleToLabel(UserRole role) {
+    return role == UserRole.admin ? '관리자' : '일반';
+  }
+
+  // 권한범위 라벨 변환
+  String _scopeToLabel(UserScope scope) {
+    switch (scope) {
+      case UserScope.self:
+        return '본인';
+      case UserScope.branch:
+        return '센터';
+      case UserScope.hq:
+        return '본부';
+      case UserScope.all:
+        return '전체';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -861,11 +929,9 @@ class _UserManagementTabState extends State<_UserManagementTab> {
                             DataColumn(label: Text('아이디')),
                             DataColumn(label: Text('이름')),
                             DataColumn(label: Text('본부')),
-                            DataColumn(label: Text('지사')),
-                            DataColumn(label: Text('역할')),
+                            DataColumn(label: Text('센터')),
                             DataColumn(label: Text('권한')),
-                            DataColumn(label: Text('판매자명')),
-                            DataColumn(label: Text('상태')),
+                            DataColumn(label: Text('권한범위')),
                             DataColumn(label: Text('작업')),
                           ],
                           rows: _filteredUsers.map((u) {
@@ -874,17 +940,25 @@ class _UserManagementTabState extends State<_UserManagementTab> {
                               cells: [
                                 DataCell(Text(u.id)),
                                 DataCell(Text(u.name)),
-                                DataCell(Text(u.hq)),
-                                DataCell(Text(u.branch)),
-                                DataCell(Text(u.roleLabel)),
-                                DataCell(Text(u.scopeLabel)),
-                                DataCell(Text(u.sellerName ?? '-')),
-                                DataCell(Text(u.isActive ? '활성' : '비활성')),
+                                DataCell(Text(u.hq.isEmpty ? '-' : u.hq)),
+                                DataCell(Text(u.branch.isEmpty ? '-' : u.branch)),
+                                DataCell(Text(_roleToLabel(u.role))),
+                                DataCell(Text(_scopeToLabel(u.scope))),
                                 DataCell(
-                                  IconButton(
-                                    icon: const Icon(Icons.edit, size: 20),
-                                    onPressed: () => _showEditDialog(u),
-                                    tooltip: '수정',
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.edit, size: 20),
+                                        onPressed: () => _showEditDialog(u),
+                                        tooltip: '수정',
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.delete, size: 20, color: Colors.red),
+                                        onPressed: () => _showDeleteDialog(u),
+                                        tooltip: '삭제',
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
@@ -919,14 +993,55 @@ class _UserEditDialogState extends State<_UserEditDialog> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _idController;
   late TextEditingController _nameController;
-  late TextEditingController _hqController;
-  late TextEditingController _branchController;
-  late TextEditingController _sellerNameController;
-  late TextEditingController _pwController;
-  UserRole _role = UserRole.user;
-  UserScope _scope = UserScope.self;
-  bool _isActive = true;
+  late TextEditingController _passwordController;
+  late TextEditingController _passwordConfirmController;
+  
+  // 선택값
+  String? _selectedHq;
+  String? _selectedCenter;
+  String? _selectedRoleLabel; // '일반' 또는 '관리자'
+  String? _selectedScopeLabel; // '본인', '센터', '본부', '전체'
+  
+  // 비밀번호 표시/숨김
+  bool _obscurePassword = true;
+  bool _obscurePasswordConfirm = true;
+  
   bool _isEdit = false;
+  bool _isLoading = false;
+
+  // 옵션 리스트
+  static const List<String> _hqOptions = ['강북', '강남', '강서', '동부', '서부'];
+  static const List<String> _centerOptions = ['강북', '강동', '강원', '강남', '남부', '강서', '인천', '부산', '경남', '대구', '충청', '광주', '전남'];
+  static const List<String> _roleLabels = ['일반', '관리자'];
+  static const List<String> _scopeLabels = ['본인', '센터', '본부', '전체'];
+  
+  // 매핑
+  static UserRole _roleFromLabel(String label) {
+    return label == '관리자' ? UserRole.admin : UserRole.user;
+  }
+  
+  static UserScope _scopeFromLabel(String label) {
+    switch (label) {
+      case '본인': return UserScope.self;
+      case '센터': return UserScope.branch;
+      case '본부': return UserScope.hq;
+      case '전체': return UserScope.all;
+      default: return UserScope.self;
+    }
+  }
+  
+  static String _roleToLabel(UserRole role) {
+    return role == UserRole.admin ? '관리자' : '일반';
+  }
+  
+  static String _scopeToLabel(UserScope scope) {
+    switch (scope) {
+      case UserScope.self: return '본인';
+      case UserScope.branch: return '센터';
+      case UserScope.hq: return '본부';
+      case UserScope.all: return '전체';
+    }
+  }
 
   @override
   void initState() {
@@ -934,150 +1049,406 @@ class _UserEditDialogState extends State<_UserEditDialog> {
     _isEdit = widget.user != null;
     _idController = TextEditingController(text: widget.user?.id ?? '');
     _nameController = TextEditingController(text: widget.user?.name ?? '');
-    _hqController = TextEditingController(text: widget.user?.hq ?? '');
-    _branchController = TextEditingController(text: widget.user?.branch ?? '');
-    _sellerNameController = TextEditingController(text: widget.user?.sellerName ?? '');
-    _pwController = TextEditingController();
-    _role = widget.user?.role ?? UserRole.user;
-    _scope = widget.user?.scope ?? UserScope.self;
-    _isActive = widget.user?.isActive ?? true;
+    _passwordController = TextEditingController();
+    _passwordConfirmController = TextEditingController();
+    
+    if (_isEdit && widget.user != null) {
+      final u = widget.user!;
+      _selectedHq = u.hq.isNotEmpty ? u.hq : null;
+      _selectedCenter = u.branch.isNotEmpty ? u.branch : null;
+      _selectedRoleLabel = _roleToLabel(u.role);
+      // 관리자일 경우 권한범위는 항상 '전체'
+      _selectedScopeLabel = u.role == UserRole.admin ? '전체' : _scopeToLabel(u.scope);
+    } else {
+      _selectedRoleLabel = '일반';
+      _selectedScopeLabel = '본인';
+    }
   }
 
   @override
   void dispose() {
     _idController.dispose();
     _nameController.dispose();
-    _hqController.dispose();
-    _branchController.dispose();
-    _sellerNameController.dispose();
-    _pwController.dispose();
+    _passwordController.dispose();
+    _passwordConfirmController.dispose();
     super.dispose();
+  }
+
+  bool get _isFormValid {
+    if (!_isEdit && _idController.text.trim().isEmpty) return false;
+    if (_nameController.text.trim().isEmpty) return false;
+    if (_selectedRoleLabel == null) return false;
+    // 관리자가 아닐 때만 권한범위 체크
+    if (_selectedRoleLabel != '관리자' && _selectedScopeLabel == null) return false;
+    if (!_isEdit) {
+      if (_passwordController.text.length < 6) return false;
+      if (_passwordController.text != _passwordConfirmController.text) return false;
+    } else {
+      if (_passwordController.text.isNotEmpty && _passwordController.text.length < 6) return false;
+      if (_passwordController.text.isNotEmpty && _passwordController.text != _passwordConfirmController.text) return false;
+    }
+    return true;
   }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    if (!_isEdit && _pwController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('비밀번호를 입력하세요.'), backgroundColor: Colors.red),
-      );
-      return;
+    
+    // 비밀번호 검증
+    if (!_isEdit) {
+      if (_passwordController.text.length < 6) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('비밀번호는 6자 이상이어야 합니다.'), backgroundColor: Colors.red),
+        );
+        return;
+      }
+      if (_passwordController.text != _passwordConfirmController.text) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('비밀번호가 일치하지 않습니다.'), backgroundColor: Colors.red),
+        );
+        return;
+      }
+    } else {
+      if (_passwordController.text.isNotEmpty) {
+        if (_passwordController.text.length < 6) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('비밀번호는 6자 이상이어야 합니다.'), backgroundColor: Colors.red),
+          );
+          return;
+        }
+        if (_passwordController.text != _passwordConfirmController.text) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('비밀번호가 일치하지 않습니다.'), backgroundColor: Colors.red),
+          );
+          return;
+        }
+      }
     }
+    
+    setState(() => _isLoading = true);
+    
     try {
       final repo = widget.userRepo;
-      final user = User(
-        id: _idController.text.trim(),
-        name: _nameController.text.trim(),
-        hq: _hqController.text.trim(),
-        branch: _branchController.text.trim(),
-        role: _role,
-        scope: _scope,
-        isActive: _isActive,
-        sellerName: _sellerNameController.text.trim().isEmpty ? null : _sellerNameController.text.trim(),
-      );
-      if (_isEdit) {
-        await repo.update(user, newPassword: _pwController.text.isEmpty ? null : _pwController.text);
-      } else {
-        await repo.create(user, _pwController.text);
+      
+      // 아이디 (수정 모드에서는 기존 아이디 유지)
+      final userId = _isEdit ? widget.user!.id : _idController.text.trim();
+      
+      if (userId.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('아이디를 입력하세요.'), backgroundColor: Colors.red),
+        );
+        return;
       }
-      if (mounted) Navigator.of(context).pop({'success': true});
+      
+      // 관리자 권한일 경우 권한범위는 항상 ALL
+      final scope = _roleFromLabel(_selectedRoleLabel!) == UserRole.admin
+          ? UserScope.all
+          : _scopeFromLabel(_selectedScopeLabel!);
+      
+      final user = User(
+        id: userId,
+        name: _nameController.text.trim(),
+        hq: _selectedHq ?? '',
+        branch: _selectedCenter ?? '',
+        role: _roleFromLabel(_selectedRoleLabel!),
+        scope: scope,
+        isActive: true,
+        sellerName: null,
+      );
+      
+      if (_isEdit) {
+        await repo.update(user, newPassword: _passwordController.text.isEmpty ? null : _passwordController.text);
+      } else {
+        await repo.create(user, _passwordController.text);
+      }
+      
+      if (mounted) {
+        Navigator.of(context).pop({'success': true});
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_isEdit ? '사용자가 수정되었습니다.' : '사용자가 생성되었습니다.'), backgroundColor: Colors.green),
+        );
+      }
     } catch (e) {
+      debugPrint('사용자 저장 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('오류: $e'), backgroundColor: Colors.red),
         );
       }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
+  }
+
+  String? _validatePassword(String? value) {
+    if (!_isEdit && (value == null || value.isEmpty)) {
+      return '비밀번호를 입력하세요';
+    }
+    if (value != null && value.isNotEmpty && value.length < 6) {
+      return '비밀번호는 6자 이상이어야 합니다';
+    }
+    return null;
+  }
+
+  String? _validatePasswordConfirm(String? value) {
+    if (!_isEdit && (value == null || value.isEmpty)) {
+      return '비밀번호 확인을 입력하세요';
+    }
+    if (value != null && value.isNotEmpty && _passwordController.text != value) {
+      return '비밀번호가 일치하지 않습니다';
+    }
+    return null;
   }
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(_isEdit ? '사용자 수정' : '사용자 생성'),
-      content: SizedBox(
-        width: 500,
+    final isDesktop = MediaQuery.of(context).size.width >= 600;
+    
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Container(
+        width: isDesktop ? 700 : MediaQuery.of(context).size.width * 0.9,
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.9,
+        ),
         child: Form(
           key: _formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: _idController,
-                  decoration: const InputDecoration(labelText: '아이디 *'),
-                  enabled: !_isEdit,
-                  validator: (v) => v?.isEmpty ?? true ? '필수' : null,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 헤더
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: const BoxDecoration(
+                  border: Border(bottom: BorderSide(color: Colors.grey, width: 0.5)),
                 ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _nameController,
-                  decoration: const InputDecoration(labelText: '이름 *'),
-                  validator: (v) => v?.isEmpty ?? true ? '필수' : null,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      _isEdit ? '사용자 수정' : '사용자 생성',
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _hqController,
-                  decoration: const InputDecoration(labelText: '본부'),
+              ),
+              // 폼 내용
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: _buildFormLayout(),
                 ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _branchController,
-                  decoration: const InputDecoration(labelText: '지사'),
+              ),
+              // 하단 버튼
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: const BoxDecoration(
+                  border: Border(top: BorderSide(color: Colors.grey, width: 0.5)),
                 ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _sellerNameController,
-                  decoration: const InputDecoration(labelText: '판매자명 (SELF 권한용)'),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: _isLoading ? null : () => Navigator.pop(context),
+                      child: const Text('취소'),
+                    ),
+                    const SizedBox(width: 12),
+                    FilledButton(
+                      onPressed: (_isLoading || !_isFormValid) ? null : _submit,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFFFF6F61),
+                        foregroundColor: Colors.white,
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : Text(_isEdit ? '수정' : '생성'),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<UserRole>(
-                  value: _role,
-                  decoration: const InputDecoration(labelText: '역할 *'),
-                  items: UserRole.values.map((r) {
-                    return DropdownMenuItem(
-                      value: r,
-                      child: Text(r == UserRole.user ? 'USER' : r == UserRole.manager ? 'MANAGER' : 'ADMIN'),
-                    );
-                  }).toList(),
-                  onChanged: (v) => setState(() => _role = v ?? UserRole.user),
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<UserScope>(
-                  value: _scope,
-                  decoration: const InputDecoration(labelText: '권한 범위 *'),
-                  items: UserScope.values.map((s) {
-                    return DropdownMenuItem(
-                      value: s,
-                      child: Text(s == UserScope.self ? 'SELF' : s == UserScope.branch ? 'BRANCH' : s == UserScope.hq ? 'HQ' : 'ALL'),
-                    );
-                  }).toList(),
-                  onChanged: (v) => setState(() => _scope = v ?? UserScope.self),
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _pwController,
-                  decoration: InputDecoration(labelText: _isEdit ? '비밀번호 (변경 시만 입력)' : '비밀번호 *'),
-                  obscureText: true,
-                  validator: _isEdit ? null : (v) => v?.isEmpty ?? true ? '필수' : null,
-                ),
-                const SizedBox(height: 16),
-                CheckboxListTile(
-                  title: const Text('활성'),
-                  value: _isActive,
-                  onChanged: (v) => setState(() => _isActive = v ?? true),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('취소'),
+    );
+  }
+
+  Widget _buildFormLayout() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextFormField(
+          controller: _idController,
+          decoration: const InputDecoration(
+            labelText: '아이디 *',
+            border: OutlineInputBorder(),
+          ),
+          enabled: !_isEdit,
+          validator: (v) => (!_isEdit && (v?.trim().isEmpty ?? true)) ? '아이디를 입력하세요' : null,
+          onChanged: (_) => setState(() {}),
         ),
-        FilledButton(
-          onPressed: _submit,
-          child: Text(_isEdit ? '수정' : '생성'),
+        const SizedBox(height: 16),
+        TextFormField(
+          controller: _nameController,
+          decoration: const InputDecoration(
+            labelText: '이름 *',
+            border: OutlineInputBorder(),
+          ),
+          validator: (v) => v?.trim().isEmpty ?? true ? '이름을 입력하세요' : null,
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 16),
+        DropdownButtonFormField<String>(
+          value: _selectedHq,
+          decoration: const InputDecoration(
+            labelText: '본부',
+            border: OutlineInputBorder(),
+            hintText: '선택하세요',
+          ),
+          items: [
+            const DropdownMenuItem<String>(
+              value: null,
+              child: Text('선택 안 함'),
+            ),
+            ..._hqOptions.map((hq) {
+              return DropdownMenuItem(
+                value: hq,
+                child: Text(hq),
+              );
+            }),
+          ],
+          onChanged: (value) {
+            setState(() {
+              _selectedHq = value;
+            });
+          },
+        ),
+        const SizedBox(height: 16),
+        DropdownButtonFormField<String>(
+          value: _selectedCenter,
+          decoration: const InputDecoration(
+            labelText: '센터',
+            border: OutlineInputBorder(),
+            hintText: '선택하세요',
+          ),
+          items: [
+            const DropdownMenuItem<String>(
+              value: null,
+              child: Text('선택 안 함'),
+            ),
+            ..._centerOptions.map((center) {
+              return DropdownMenuItem(
+                value: center,
+                child: Text(center),
+              );
+            }),
+          ],
+          onChanged: (value) {
+            setState(() {
+              _selectedCenter = value;
+            });
+          },
+        ),
+        const SizedBox(height: 16),
+        DropdownButtonFormField<String>(
+          value: _selectedRoleLabel,
+          decoration: const InputDecoration(
+            labelText: '권한 *',
+            border: OutlineInputBorder(),
+            hintText: '선택하세요',
+          ),
+          items: _roleLabels.map((label) {
+            return DropdownMenuItem(
+              value: label,
+              child: Text(label),
+            );
+          }).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedRoleLabel = value;
+                    // 관리자로 변경 시 권한범위를 '전체'로 자동 설정
+                    if (value == '관리자') {
+                      _selectedScopeLabel = '전체';
+                    }
+                  });
+                },
+                validator: (v) => v == null ? '권한을 선택하세요' : null,
+        ),
+        const SizedBox(height: 16),
+        DropdownButtonFormField<String>(
+          value: _selectedScopeLabel,
+          decoration: InputDecoration(
+            labelText: '권한범위 *',
+            border: const OutlineInputBorder(),
+            hintText: '선택하세요',
+            enabled: _selectedRoleLabel != '관리자',
+          ),
+          items: _scopeLabels.map((label) {
+            return DropdownMenuItem(
+              value: label,
+              child: Text(label),
+            );
+          }).toList(),
+          onChanged: _selectedRoleLabel == '관리자' ? null : (value) {
+            setState(() {
+              _selectedScopeLabel = value;
+            });
+          },
+          validator: (v) {
+            // 관리자일 때는 권한범위 검증 건너뛰기
+            if (_selectedRoleLabel == '관리자') return null;
+            return v == null ? '권한범위를 선택하세요' : null;
+          },
+        ),
+        const SizedBox(height: 16),
+        TextFormField(
+          controller: _passwordController,
+          decoration: InputDecoration(
+            labelText: _isEdit ? '비밀번호 (변경 시만)' : '비밀번호 *',
+            border: const OutlineInputBorder(),
+            suffixIcon: IconButton(
+              icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
+              onPressed: () {
+                setState(() {
+                  _obscurePassword = !_obscurePassword;
+                });
+              },
+            ),
+          ),
+          obscureText: _obscurePassword,
+          validator: _validatePassword,
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 16),
+        TextFormField(
+          controller: _passwordConfirmController,
+          decoration: InputDecoration(
+            labelText: _isEdit ? '비밀번호 확인 (변경 시만)' : '비밀번호 확인 *',
+            border: const OutlineInputBorder(),
+            suffixIcon: IconButton(
+              icon: Icon(_obscurePasswordConfirm ? Icons.visibility : Icons.visibility_off),
+              onPressed: () {
+                setState(() {
+                  _obscurePasswordConfirm = !_obscurePasswordConfirm;
+                });
+              },
+            ),
+          ),
+          obscureText: _obscurePasswordConfirm,
+          validator: _validatePasswordConfirm,
+          onChanged: (_) => setState(() {}),
         ),
       ],
     );

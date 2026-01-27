@@ -143,6 +143,8 @@ GoRouter createRouter(AuthService authService) {
       // 로그인 페이지는 로그인 안 된 경우만
       if (path == '/' || path == '/admin-login') {
         if (isLoggedIn) {
+          // Admin은 관리자 페이지로, 일반 사용자는 일반 페이지로
+          // (Admin은 나중에 일반 페이지로도 이동 가능)
           return isAdmin ? '/admin' : '/main';
         }
         return null;
@@ -151,6 +153,8 @@ GoRouter createRouter(AuthService authService) {
       // 보호된 경로: 로그인 필요
       if (path.startsWith('/main') || path.startsWith('/admin')) {
         if (!isLoggedIn) return '/';
+        // Admin은 /admin과 /main 모두 접근 가능
+        // 일반 사용자는 /main만 접근 가능
         if (path.startsWith('/admin') && !isAdmin) return '/main';
       }
       
@@ -538,6 +542,7 @@ class _CustomerListByHqScreenState extends State<CustomerListByHqScreen> {
   StreamSubscription<String>? _csvReloadSubscription;
   Timer? _reloadDebounceTimer;
   bool _isReloading = false;
+  bool _isInitialLoad = true; // 초기 로딩 여부
   
   final List<String> _salesStatusOptions = ['영업전', '영업중', '영업실패', '영업성공'];
 
@@ -570,6 +575,12 @@ class _CustomerListByHqScreenState extends State<CustomerListByHqScreen> {
   
   // [CSV_RELOAD] CSV 재로드 처리 (debounce 300ms)
   void _handleCsvReload(String filename) {
+    // 초기 로딩 중에는 재로드 이벤트 무시
+    if (_isInitialLoad) {
+      debugPrint('[고객사] 초기 로딩 중이므로 재로드 이벤트 무시: $filename');
+      return;
+    }
+    
     // 중복 로딩 방지
     if (_isReloading || _isLoading) {
       debugPrint('[고객사] 이미 로딩 중이므로 재로드 건너뜀');
@@ -579,7 +590,7 @@ class _CustomerListByHqScreenState extends State<CustomerListByHqScreen> {
     // debounce: 300ms 대기
     _reloadDebounceTimer?.cancel();
     _reloadDebounceTimer = Timer(const Duration(milliseconds: 300), () {
-      if (mounted && !_isReloading && !_isLoading) {
+      if (mounted && !_isReloading && !_isLoading && !_isInitialLoad) {
         debugPrint('[고객사] CSV 재로드 시작: $filename');
         _loadCsvData();
       }
@@ -588,8 +599,8 @@ class _CustomerListByHqScreenState extends State<CustomerListByHqScreen> {
 
   // [RBAC] Repository에서 로드 및 권한 필터링
   Future<void> _loadCsvData() async {
-    // 중복 로딩 방지
-    if (_isReloading || _isLoading) {
+    // 중복 로딩 방지 (초기 로딩이 아닌 경우에만)
+    if (!_isInitialLoad && (_isReloading || _isLoading)) {
       debugPrint('[고객사] 이미 로딩 중이므로 건너뜀');
       return;
     }
@@ -604,6 +615,7 @@ class _CustomerListByHqScreenState extends State<CustomerListByHqScreen> {
       final authService = context.read<AuthService>();
       final customerRepo = context.read<CustomerRepository>();
       final currentUser = authService.currentUser;
+      debugPrint('🔍 [RBAC] getFiltered 호출 전 - 사용자: ${currentUser?.id ?? "없음"}, Role: ${currentUser?.role}, Scope: ${currentUser?.scope}');
       
       // [CSV] Firebase Storage에서 customerlist.csv 로드 시도 (없으면 assets fallback)
       try {
@@ -645,6 +657,7 @@ class _CustomerListByHqScreenState extends State<CustomerListByHqScreen> {
           _filteredCustomers = customerDataList;
           _isLoading = false;
           _isReloading = false;
+          _isInitialLoad = false; // 초기 로딩 완료
           _errorMessage = null;
         });
         _filterCustomers();
@@ -656,6 +669,7 @@ class _CustomerListByHqScreenState extends State<CustomerListByHqScreen> {
         setState(() {
           _isLoading = false;
           _isReloading = false;
+          _isInitialLoad = false; // 초기 로딩 완료 (에러 발생 시에도)
           _errorMessage = '고객사 데이터를 불러올 수 없습니다: ${e.toString()}';
         });
       }
@@ -1190,6 +1204,7 @@ class _CustomerListScreenState extends State<CustomerListScreen> {
       final authService = context.read<AuthService>();
       final customerRepo = context.read<CustomerRepository>();
       final currentUser = authService.currentUser;
+      debugPrint('🔍 [RBAC] getFiltered 호출 전 - 사용자: ${currentUser?.id ?? "없음"}, Role: ${currentUser?.role}, Scope: ${currentUser?.scope}');
       
       // [CSV] Firebase Storage에서 customerlist.csv 로드 시도 (없으면 assets fallback)
       try {
@@ -5965,6 +5980,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   StreamSubscription<String>? _csvReloadSubscription;
   Timer? _reloadDebounceTimer;
   bool _isReloading = false;
+  bool _isInitialLoad = true; // 초기 로딩 여부
 
   // [DASH] 전체현황 KPI 집계
   Map<String, int> _overallKpi = {'무선': 0, '유선': 0, '약갱': 0, '기타': 0};
@@ -6002,6 +6018,12 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   
   // [CSV_RELOAD] CSV 재로드 처리 (debounce 300ms)
   void _handleCsvReload(String filename) {
+    // 초기 로딩 중에는 재로드 이벤트 무시
+    if (_isInitialLoad) {
+      debugPrint('[DASH] 초기 로딩 중이므로 재로드 이벤트 무시: $filename');
+      return;
+    }
+    
     // 중복 로딩 방지
     if (_isReloading || _isLoading) {
       debugPrint('[DASH] 이미 로딩 중이므로 재로드 건너뜀');
@@ -6011,7 +6033,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     // debounce: 300ms 대기
     _reloadDebounceTimer?.cancel();
     _reloadDebounceTimer = Timer(const Duration(milliseconds: 300), () {
-      if (mounted && !_isReloading && !_isLoading) {
+      if (mounted && !_isReloading && !_isLoading && !_isInitialLoad) {
         debugPrint('[DASH] CSV 재로드 시작: $filename');
         _loadKpiData();
       }
@@ -6020,8 +6042,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
 
   // [DASH] KPI CSV 로딩/캐싱
   Future<void> _loadKpiData() async {
-    // 중복 로딩 방지
-    if (_isReloading || _isLoading) {
+    // 중복 로딩 방지 (초기 로딩이 아닌 경우에만)
+    if (!_isInitialLoad && (_isReloading || _isLoading)) {
       debugPrint('[DASH] 이미 로딩 중이므로 건너뜀');
       return;
     }
@@ -6092,6 +6114,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
               : <String>{};
           _isLoading = false;
           _isReloading = false;
+          _isInitialLoad = false; // 초기 로딩 완료
         });
 
         _calculateKpi();
@@ -6104,6 +6127,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
         setState(() {
           _isLoading = false;
           _isReloading = false;
+          _isInitialLoad = false; // 초기 로딩 완료 (에러 발생 시에도)
           _errorMessage = '대시보드 데이터를 불러올 수 없습니다: ${e.toString()}';
         });
       }
@@ -8336,6 +8360,18 @@ class MoreScreen extends StatelessWidget {
                         );
                       },
                     ),
+                    // 관리자 페이지 이동 버튼 (Admin만 표시)
+                    if (authService.isAdmin) ...[
+                      const SizedBox(height: 24),
+                      _MoreCardButton(
+                        title: '관리자 페이지',
+                        subtitle: '관리자 대시보드로 이동합니다',
+                        icon: Icons.admin_panel_settings,
+                        onTap: () {
+                          context.go('/admin');
+                        },
+                      ),
+                    ],
                     const SizedBox(height: 24),
                     // 로그아웃 버튼
                     _MoreCardButton(

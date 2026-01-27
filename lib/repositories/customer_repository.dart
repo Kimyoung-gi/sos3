@@ -59,14 +59,18 @@ class CustomerRepository {
   /// Admin 사용자는 필터링을 건너뛰고 전체 고객을 반환
   Future<List<Customer>> getFiltered(User? user) async {
     final all = await _loadAll();
+    debugPrint('🔍 [RBAC] getFiltered 내부 - 전체 고객 수: ${all.length}건, 사용자: ${user?.id ?? "null"}, Role: ${user?.role}');
     
     // Admin 사용자는 항상 ALL 권한으로 처리 (필터링 건너뛰기)
     if (user != null && user.role == UserRole.admin) {
-      debugPrint('CustomerRepository.getFiltered: Admin 사용자 - 필터링 건너뛰고 전체 고객 반환 (${all.length}건)');
+      debugPrint('✅ [RBAC] Admin 사용자 감지 - 필터링 건너뛰고 전체 고객 반환 (${all.length}건)');
       return List<Customer>.from(all);
     }
     
-    return PermissionService.filterByScope(user, all);
+    debugPrint('⚠️ [RBAC] Admin이 아님 - PermissionService.filterByScope 호출');
+    final filtered = PermissionService.filterByScope(user, all);
+    debugPrint('🔍 [RBAC] filterByScope 결과: ${filtered.length}건');
+    return filtered;
   }
 
   Future<List<Customer>> getAll() => _loadAll();

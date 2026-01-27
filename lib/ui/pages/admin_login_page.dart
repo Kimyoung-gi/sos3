@@ -72,7 +72,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/'),
+          onPressed: () => context.go('/login'),
         ),
       ),
       body: SafeArea(
@@ -138,7 +138,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                   ),
                   const SizedBox(height: 16),
                   TextButton(
-                    onPressed: () => context.go('/'),
+                    onPressed: () => context.go('/login'),
                     child: const Text('일반 로그인으로 돌아가기'),
                   ),
                 ],
