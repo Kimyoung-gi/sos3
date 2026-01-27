@@ -25,6 +25,9 @@ import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'dart:async';
+// [WEB] iframe을 위한 import
+import 'package:universal_html/html.dart' as html;
+import 'dart:ui_web' show platformViewRegistry;
 
 // [AUTH] 인증/저장소 import
 import 'services/auth_service.dart';
@@ -42,6 +45,8 @@ import 'ui/pages/login_page.dart';
 import 'ui/pages/admin_login_page.dart';
 import 'ui/pages/admin_home_page.dart';
 import 'ui/pages/customer_register_page.dart';
+import 'ui/pages/customer_list_page.dart';
+import 'ui/pages/home/home_page.dart';
 
 void main() async {
   // Flutter 바인딩 초기화 (필수)
@@ -144,9 +149,9 @@ GoRouter createRouter(AuthService authService) {
       // 로그인 페이지는 로그인 안 된 경우만
       if (path == '/' || path == '/admin-login') {
         if (isLoggedIn) {
-          // Admin은 관리자 페이지로, 일반 사용자는 일반 페이지로
+          // Admin은 관리자 페이지로, 일반 사용자는 홈으로
           // (Admin은 나중에 일반 페이지로도 이동 가능)
-          return isAdmin ? '/admin' : '/main';
+          return isAdmin ? '/admin' : '/main/0'; // 홈 탭(index 0)
         }
         return null;
       }
@@ -267,14 +272,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     if (location.startsWith('/main/')) {
       final tabStr = location.split('/').last;
       final tab = int.tryParse(tabStr);
-      if (tab != null && tab >= 0 && tab <= 5 && tab != _currentIndex) {
+      if (tab != null && tab >= 0 && tab <= 4 && tab != _currentIndex) {
         setState(() {
           _currentIndex = tab;
         });
       }
     } else if (location == '/main' && _currentIndex != 0) {
       setState(() {
-        _currentIndex = 0;
+        _currentIndex = 0; // 홈 탭
       });
     }
   }
@@ -327,15 +332,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       body: IndexedStack(
         index: _currentIndex,
         children: [
-          CustomerHqSelectionScreen(), // 고객사
+          const HomePage(), // 홈
+          CustomerListPage(), // 고객사
           FrontierHqSelectionScreen(), // 프론티어
           DashboardScreen(), // 대시보드
-          FavoritesScreen(
-            favoriteKeys: _favoriteCustomerKeys,
-            onToggleFavorite: toggleFavorite,
-            isFavorite: isFavorite,
-          ), // [FAV] 즐겨찾기
-          ODScreen(), // OD
           MoreScreen(), // 더보기
         ],
       ),
@@ -348,35 +348,33 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           // [WEB] URL 업데이트
           context.go('/main/$index');
         },
+        backgroundColor: Colors.white,
+        indicatorColor: const Color(0xFFFFE8E6), // 연한 코랄 배경 (pill)
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.store_outlined),
-            selectedIcon: Icon(Icons.store),
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home_rounded),
+            label: '홈',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.business_outlined),
+            selectedIcon: Icon(Icons.business_rounded),
             label: '고객사',
           ),
           NavigationDestination(
             icon: Icon(Icons.groups_outlined),
-            selectedIcon: Icon(Icons.groups),
+            selectedIcon: Icon(Icons.groups_rounded),
             label: '프론티어',
           ),
           NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard),
+            selectedIcon: Icon(Icons.dashboard_rounded),
             label: '대시보드',
           ),
           NavigationDestination(
-            icon: Icon(Icons.star_outline),
-            selectedIcon: Icon(Icons.star),
-            label: '즐겨찾기',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.language_outlined),
-            selectedIcon: Icon(Icons.language),
-            label: 'OD',
-          ),
-          NavigationDestination(
             icon: Icon(Icons.more_horiz_outlined),
-            selectedIcon: Icon(Icons.more_horiz),
+            selectedIcon: Icon(Icons.more_horiz_rounded),
             label: '더보기',
           ),
         ],
@@ -2584,91 +2582,304 @@ class PerformanceData {
 }
 
 // ========================================
-// 프론티어 본부 선택 화면
+// 프론티어 본부 선택 화면 (필터 칩 형태로 변경)
 // ========================================
-class FrontierHqSelectionScreen extends StatelessWidget {
+class FrontierHqSelectionScreen extends StatefulWidget {
   const FrontierHqSelectionScreen({super.key});
 
-  static const List<String> _hqList = ['강북', '강남', '강서', '동부', '서부'];
+  @override
+  State<FrontierHqSelectionScreen> createState() => _FrontierHqSelectionScreenState();
+}
+
+class _FrontierHqSelectionScreenState extends State<FrontierHqSelectionScreen> {
+  static const List<String> _hqList = ['전체', '강북', '강남', '강서', '동부', '서부'];
+  String? _selectedHq;
+  List<FrontierData> _allFrontiers = [];
+  List<FrontierData> _filteredFrontiers = [];
+  bool _isLoading = true;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCsvData();
+  }
+
+  // CSV 파일들 로드
+  Future<void> _loadCsvData() async {
+    try {
+      debugPrint('프론티어 CSV 파일 로딩 시작...');
+      final String staffCsv = await CsvService.load('kpi-info.csv');
+      final List<FrontierData> frontiers = _parseStaffCsv(staffCsv);
+      
+      setState(() {
+        _allFrontiers = frontiers;
+        _filteredFrontiers = frontiers;
+        _isLoading = false;
+        _errorMessage = null;
+      });
+      _applyFilters();
+    } catch (e, stackTrace) {
+      debugPrint('❌ CSV 로딩 오류: $e');
+      debugPrint('스택 트레이스: $stackTrace');
+      setState(() {
+        _isLoading = false;
+        _errorMessage = '프론티어 데이터를 불러올 수 없습니다: ${e.toString()}';
+      });
+    }
+  }
+
+  // 인력정보 CSV 파싱
+  List<FrontierData> _parseStaffCsv(String csvData) {
+    final List<FrontierData> frontiers = [];
+    final List<String> lines = csvData.split('\n');
+
+    if (lines.isEmpty) return frontiers;
+
+    final bool isTabDelimited = lines[0].contains('\t');
+    final String delimiter = isTabDelimited ? '\t' : ',';
+    
+    final List<String> headers = lines[0].split(delimiter).map((e) => e.trim().replaceAll('"', '')).toList();
+    
+    final int nameIndex = _findHeaderIndex(headers, ['성명', '이름', 'name']);
+    final int positionIndex = _findHeaderIndex(headers, ['직급', 'position']);
+    final int hqIndex = _findHeaderIndex(headers, ['본부', 'hq']);
+    final int centerIndex = _findHeaderIndex(headers, ['센터', 'center']);
+    final int gradeIndex = _findHeaderIndex(headers, ['등급', 'grade']);
+
+    if (nameIndex == -1) {
+      return frontiers;
+    }
+
+    for (int i = 1; i < lines.length; i++) {
+      final String line = lines[i].trim();
+      if (line.isEmpty) continue;
+
+      final List<String> values = line.split(delimiter).map((e) => e.trim().replaceAll('"', '')).toList();
+      if (values.length < headers.length) {
+        continue;
+      }
+
+      try {
+        frontiers.add(FrontierData(
+          name: values[nameIndex],
+          position: positionIndex != -1 ? values[positionIndex] : '',
+          hq: hqIndex != -1 ? values[hqIndex] : '',
+          center: centerIndex != -1 ? values[centerIndex] : '',
+          grade: gradeIndex != -1 ? values[gradeIndex] : '',
+        ));
+      } catch (e) {
+        continue;
+      }
+    }
+
+    return frontiers;
+  }
+
+  int _findHeaderIndex(List<String> headers, List<String> keywords) {
+    for (int i = 0; i < headers.length; i++) {
+      final header = headers[i].toLowerCase();
+      for (final keyword in keywords) {
+        if (header.contains(keyword.toLowerCase())) {
+          return i;
+        }
+      }
+    }
+    return -1;
+  }
+
+  void _applyFilters() {
+    List<FrontierData> filtered = List.from(_allFrontiers);
+    
+    // 본부 필터
+    if (_selectedHq != null && _selectedHq != '전체') {
+      filtered = filtered.where((f) => f.hq == _selectedHq).toList();
+    }
+    
+    setState(() {
+      _filteredFrontiers = filtered;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        centerTitle: false,
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        elevation: 0,
-        title: const Text(
-          '프론티어',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF1A1A1A),
+        backgroundColor: Colors.white,
+        elevation: 1,
+        leading: IconButton(
+          icon: const Icon(Icons.menu, color: Color(0xFF1A1A1A)),
+          onPressed: () {
+            // 햄버거 메뉴 (필요시 구현)
+          },
+        ),
+        title: Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Image.asset(
+            'assets/images/sos_logo.png',
+            height: 28,
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
           ),
         ),
+        centerTitle: true,
       ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                itemCount: _hqList.length,
-                itemBuilder: (context, index) {
-                  final hq = _hqList[index];
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
+      body: Column(
+        children: [
+          // 본부 필터 Chips
+          Container(
+            height: 56,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            color: Colors.white,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: _hqList.length,
+              itemBuilder: (context, index) {
+                final hq = _hqList[index];
+                final isSelected = (hq == '전체' && _selectedHq == null) || _selectedHq == hq;
+                
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: FilterChip(
+                    label: Text(hq),
+                    selected: isSelected,
+                    onSelected: (selected) {
+                      setState(() {
+                        _selectedHq = hq == '전체' ? null : hq;
+                      });
+                      _applyFilters();
+                    },
+                    selectedColor: const Color(0xFFFF6F61).withOpacity(0.2),
+                    checkmarkColor: const Color(0xFFFF6F61),
+                    labelStyle: TextStyle(
+                      color: isSelected ? const Color(0xFFFF6F61) : Colors.grey[700],
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                     ),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => FrontierCenterSelectionScreen(selectedHq: hq),
-                            ),
-                          );
-                        },
-                        borderRadius: BorderRadius.circular(20),
+                    side: BorderSide(
+                      color: isSelected ? const Color(0xFFFF6F61) : Colors.grey[300]!,
+                      width: isSelected ? 1.5 : 1,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          // 프론티어 리스트
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _errorMessage != null
+                    ? Center(
                         child: Padding(
                           padding: const EdgeInsets.all(20),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
+                              Icon(Icons.error_outline, size: 48, color: Colors.red[300]),
+                              const SizedBox(height: 16),
                               Text(
-                                hq,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF1A1A1A),
-                                ),
+                                _errorMessage!,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.red[700], fontSize: 16),
                               ),
-                              const Icon(
-                                Icons.chevron_right,
-                                color: Color(0xFFFF6F61),
+                              const SizedBox(height: 16),
+                              ElevatedButton(
+                                onPressed: _loadCsvData,
+                                child: const Text('다시 시도'),
                               ),
                             ],
                           ),
                         ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+                      )
+                    : _filteredFrontiers.isEmpty
+                        ? Center(
+                            child: Text(
+                              '프론티어가 없습니다',
+                              style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                            itemCount: _filteredFrontiers.length,
+                            itemBuilder: (context, index) {
+                              final frontier = _filteredFrontiers[index];
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.05),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => FrontierDetailScreen(frontier: frontier),
+                                        ),
+                                      );
+                                    },
+                                    borderRadius: BorderRadius.circular(20),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(20),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  frontier.name,
+                                                  style: const TextStyle(
+                                                    fontSize: 18,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Color(0xFF1A1A1A),
+                                                  ),
+                                                ),
+                                                if (frontier.position.isNotEmpty)
+                                                  Text(
+                                                    frontier.position,
+                                                    style: TextStyle(
+                                                      fontSize: 14,
+                                                      color: Colors.grey[600],
+                                                    ),
+                                                  ),
+                                                if (frontier.center.isNotEmpty)
+                                                  Text(
+                                                    '${frontier.hq} / ${frontier.center}',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      color: Colors.grey[500],
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                          const Icon(
+                                            Icons.chevron_right,
+                                            color: Color(0xFFFF6F61),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+          ),
+        ],
       ),
     );
   }
@@ -6033,6 +6244,10 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   // [DASH] 본부/센터 카드 리스트
   List<Map<String, dynamic>> _hqList = [];
   List<Map<String, dynamic>> _centerList = [];
+  
+  // [DASH] 본부 필터
+  static const List<String> _hqFilterList = ['전체', '강북', '강남', '강서', '동부', '서부'];
+  String? _selectedHqFilter;
 
   @override
   void initState() {
@@ -6377,6 +6592,33 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     setState(() {
       _overallKpi = overall;
     });
+    
+    // 본부 필터 적용
+    _applyHqFilter();
+  }
+  
+  // [DASH] 본부 필터 적용
+  void _applyHqFilter() {
+    // 필터링은 _hqList와 _centerList를 직접 수정하지 않고,
+    // TabBar의 본부/센터 탭에서 필터링된 데이터를 표시하도록 함
+    setState(() {
+      // 상태 업데이트로 리빌드 트리거
+    });
+  }
+  
+  // [DASH] 필터링된 본부 리스트 반환
+  List<Map<String, dynamic>> get _filteredHqList {
+    if (_selectedHqFilter == null) {
+      return _hqList;
+    }
+    return _hqList.where((hq) => hq['hq'] == _selectedHqFilter).toList();
+  }
+  
+  // [DASH] 필터링된 센터 리스트 반환
+  List<Map<String, dynamic>> get _filteredCenterList {
+    // 센터는 본부 정보가 없으므로 전체 리스트 반환
+    // 필요시 센터-본부 매핑 데이터 추가 후 필터링 가능
+    return _centerList;
   }
 
   // [DASH] 연월 멀티 선택 UI
@@ -6508,22 +6750,66 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 1,
+        leading: IconButton(
+          icon: const Icon(Icons.menu, color: Color(0xFF1A1A1A)),
+          onPressed: () {
+            // 햄버거 메뉴 (필요시 구현)
+          },
+        ),
+        title: Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Image.asset(
+            'assets/images/sos_logo.png',
+            height: 28,
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
+          ),
+        ),
+        centerTitle: true,
+      ),
       body: SafeArea(
         child: Column(
           children: [
-            // 상단 타이틀
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 16, 20, 12),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '대시보드',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1A1A1A),
-                  ),
-                ),
+            // 본부 필터 Chips
+            Container(
+              height: 56,
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              color: Colors.white,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: _hqFilterList.length,
+                itemBuilder: (context, index) {
+                  final hq = _hqFilterList[index];
+                  final isSelected = (hq == '전체' && _selectedHqFilter == null) || _selectedHqFilter == hq;
+                  
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: FilterChip(
+                      label: Text(hq),
+                      selected: isSelected,
+                      onSelected: (selected) {
+                        setState(() {
+                          _selectedHqFilter = hq == '전체' ? null : hq;
+                        });
+                        _applyHqFilter();
+                      },
+                      selectedColor: const Color(0xFFFF6F61).withOpacity(0.2),
+                      checkmarkColor: const Color(0xFFFF6F61),
+                      labelStyle: TextStyle(
+                        color: isSelected ? const Color(0xFFFF6F61) : Colors.grey[700],
+                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                      side: BorderSide(
+                        color: isSelected ? const Color(0xFFFF6F61) : Colors.grey[300]!,
+                        width: isSelected ? 1.5 : 1,
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
             Expanded(
@@ -6600,8 +6886,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                                 child: TabBarView(
                                   controller: _tabController,
                                   children: [
-                                    _HqListTab(hqList: _hqList, allData: _allKpiData, selectedYearMonths: _selectedYearMonths),
-                                    _CenterListTab(centerList: _centerList, allData: _allKpiData, selectedYearMonths: _selectedYearMonths),
+                                    _HqListTab(hqList: _filteredHqList, allData: _allKpiData, selectedYearMonths: _selectedYearMonths),
+                                    _CenterListTab(centerList: _filteredCenterList, allData: _allKpiData, selectedYearMonths: _selectedYearMonths),
                                   ],
                                 ),
                               ),
@@ -7800,6 +8086,26 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 1,
+        leading: IconButton(
+          icon: const Icon(Icons.menu, color: Color(0xFF1A1A1A)),
+          onPressed: () {
+            // 햄버거 메뉴 (필요시 구현)
+          },
+        ),
+        title: Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Image.asset(
+            'assets/images/sos_logo.png',
+            height: 28,
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
+          ),
+        ),
+        centerTitle: true,
+      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -8064,63 +8370,47 @@ class _ODScreenState extends State<ODScreen> {
   bool _hasLoadedOnce = false;
   String? _lastLoadedUrl;
   
-  // [WEB] 웹에서 iframe 위젯 빌드
+  // [WEB] 웹에서 iframe 위젯 빌드 (선택 옵션: 앱 내부에서 보기)
   Widget _buildWebIframe() {
     if (!kIsWeb) return const SizedBox();
-    // [WEB] 웹에서는 universal_html을 사용하여 iframe 생성
-    return SizedBox(
-      width: double.infinity,
-      height: double.infinity,
-      child: Builder(
-        builder: (context) {
-          // [WEB] 웹에서는 외부 브라우저로 열거나 iframe을 직접 렌더링
-          // 여기서는 간단하게 외부 브라우저로 열도록 안내
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(
-                  Icons.language,
-                  size: 64,
-                  color: Color(0xFFFF6F61),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'OD 페이지',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1A1A1A),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  _targetUrl,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                ElevatedButton.icon(
-                  onPressed: _openInExternalBrowser,
-                  icon: const Icon(Icons.open_in_browser),
-                  label: const Text('브라우저에서 열기'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFF6F61),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 12,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
+    
+    // 플랫폼 뷰 ID 생성
+    final String viewId = 'od-iframe-${_webViewKey.hashCode}';
+    
+    // 플랫폼 뷰 등록 (한 번만)
+    if (!_hasLoadedOnce) {
+      platformViewRegistry.registerViewFactory(
+        viewId,
+        (int viewId) {
+          final iframe = html.IFrameElement()
+            ..src = _targetUrl
+            ..style.border = 'none'
+            ..style.width = '100%'
+            ..style.height = '100%';
+          return iframe;
         },
-      ),
-    );
+      );
+      _hasLoadedOnce = true;
+    }
+    
+    return HtmlElementView(viewType: viewId);
+  }
+  
+  // iframe 새로고침
+  void _reloadIframe() {
+    if (!kIsWeb) return;
+    setState(() {
+      _isLoading = true;
+      _hasLoadedOnce = false; // 재등록을 위해 리셋
+    });
+    // iframe을 다시 생성하여 새로고침 효과
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    });
   }
   
   @override
@@ -8156,21 +8446,23 @@ class _ODScreenState extends State<ODScreen> {
             fontWeight: FontWeight.w600,
           ),
         ),
-        // [FIX] OD WebView ERR_CACHE_MISS 대응 - AppBar 액션 버튼 (새로고침, 외부 브라우저 열기)
+        // AppBar 액션 버튼 (새로고침)
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Color(0xFF1A1A1A)),
-            onPressed: () {
-              _retryCount = 0; // 수동 새로고침 시 재시도 카운터 리셋
-              _reloadWebView();
-            },
-            tooltip: '새로고침',
-          ),
-          IconButton(
-            icon: const Icon(Icons.open_in_browser, color: Color(0xFF1A1A1A)),
-            onPressed: _openInExternalBrowser,
-            tooltip: '외부 브라우저로 열기',
-          ),
+          if (kIsWeb)
+            IconButton(
+              icon: const Icon(Icons.refresh, color: Color(0xFF1A1A1A)),
+              onPressed: _reloadIframe,
+              tooltip: '새로고침',
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.refresh, color: Color(0xFF1A1A1A)),
+              onPressed: () {
+                _retryCount = 0;
+                _reloadWebView();
+              },
+              tooltip: '새로고침',
+            ),
         ],
       ),
       body: SafeArea(
@@ -8279,8 +8571,56 @@ class _ODScreenState extends State<ODScreen> {
 // ========================================
 // 더보기 화면
 // ========================================
-class MoreScreen extends StatelessWidget {
+class MoreScreen extends StatefulWidget {
   const MoreScreen({super.key});
+
+  @override
+  State<MoreScreen> createState() => _MoreScreenState();
+}
+
+class _MoreScreenState extends State<MoreScreen> {
+  Set<String> _favoriteCustomerKeys = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFavorites();
+  }
+
+  Future<void> _loadFavorites() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final List<String>? keys = prefs.getStringList('favorite_customer_keys');
+      if (keys != null) {
+        setState(() {
+          _favoriteCustomerKeys = keys.toSet();
+        });
+      }
+    } catch (e) {
+      debugPrint('즐겨찾기 로드 오류: $e');
+    }
+  }
+
+  Future<void> toggleFavorite(String customerKey) async {
+    setState(() {
+      if (_favoriteCustomerKeys.contains(customerKey)) {
+        _favoriteCustomerKeys.remove(customerKey);
+      } else {
+        _favoriteCustomerKeys.add(customerKey);
+      }
+    });
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList('favorite_customer_keys', _favoriteCustomerKeys.toList());
+    } catch (e) {
+      debugPrint('즐겨찾기 저장 오류: $e');
+    }
+  }
+
+  bool isFavorite(String customerKey) {
+    return _favoriteCustomerKeys.contains(customerKey);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -8373,6 +8713,58 @@ class MoreScreen extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                 child: Column(
                   children: [
+                    _MoreCardButton(
+                      title: '즐겨찾기',
+                      subtitle: '즐겨찾기한 고객사를 확인합니다',
+                      icon: Icons.star,
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => FavoritesScreen(
+                              favoriteKeys: _favoriteCustomerKeys,
+                              onToggleFavorite: toggleFavorite,
+                              isFavorite: isFavorite,
+                            ),
+                          ),
+                        ).then((_) {
+                          // 즐겨찾기 화면에서 돌아올 때 상태 갱신
+                          _loadFavorites();
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    _MoreCardButton(
+                      title: 'OD',
+                      subtitle: 'OD 페이지를 엽니다',
+                      icon: Icons.language,
+                      onTap: () async {
+                        const odUrl = 'https://kimyoung-gi.github.io/11/';
+                        try {
+                          final uri = Uri.parse(odUrl);
+                          if (kIsWeb) {
+                            await launchUrl(
+                              uri,
+                              mode: LaunchMode.externalApplication,
+                              webOnlyWindowName: '_blank',
+                            );
+                          } else {
+                            if (await canLaunchUrl(uri)) {
+                              await launchUrl(uri, mode: LaunchMode.externalApplication);
+                            }
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('브라우저에서 열 수 없습니다'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
                     _MoreCardButton(
                       title: '설정',
                       subtitle: '앱 설정을 변경합니다',

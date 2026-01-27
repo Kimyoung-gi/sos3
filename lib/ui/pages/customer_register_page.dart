@@ -3,8 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../../models/customer.dart';
 import '../../repositories/customer_repository.dart';
-import '../../utils/customer_converter.dart';
-import '../../main.dart' show CustomerDetailScreen, CustomerListByHqScreen;
 
 /// 고객사 등록 페이지
 class CustomerRegisterPage extends StatefulWidget {
@@ -214,10 +212,8 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
     }
   }
   
-  /// 등록 후 해당 본부 목록 화면으로 이동
+  /// 등록 후 목록 화면으로 돌아가기
   void _navigateToDetail(Customer customer) {
-    final customerData = CustomerConverter.toCustomerData(customer);
-    
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('등록 완료'),
@@ -226,20 +222,9 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
       ),
     );
     
-    // 등록한 고객의 본부로 이동 (앞 2글자 기준)
-    final hqPrefix = customer.hq.length >= 2 ? customer.hq.substring(0, 2) : customer.hq;
-    
-    // 등록 화면과 이전 화면들을 모두 제거하고 해당 본부 목록 화면으로 이동
-    // skipCsvLoad: true로 설정하여 CSV 재로드 방지 (등록한 데이터 보존)
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(
-        builder: (context) => CustomerListByHqScreen(
-          selectedHq: hqPrefix,
-          skipCsvLoad: true, // CSV 로드 건너뛰기
-        ),
-      ),
-      (route) => route.isFirst, // 첫 화면(MainNavigationScreen)까지만 유지
-    );
+    // 등록 화면 닫고 이전 화면(고객사 리스트)으로 돌아가기
+    // 리스트 화면에서 자동으로 리로드됨
+    Navigator.of(context).pop(true); // true를 반환하여 등록 완료를 알림
   }
   
   /// 에러 표시
