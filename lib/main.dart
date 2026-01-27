@@ -41,6 +41,7 @@ import 'utils/csv_parser_extended.dart';
 import 'ui/pages/login_page.dart';
 import 'ui/pages/admin_login_page.dart';
 import 'ui/pages/admin_home_page.dart';
+import 'ui/pages/customer_register_page.dart';
 
 void main() async {
   // Flutter 바인딩 초기화 (필수)
@@ -451,6 +452,25 @@ class CustomerHqSelectionScreen extends StatelessWidget {
             gaplessPlayback: true,
           ),
         ),
+        actions: [
+          TextButton.icon(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const CustomerRegisterPage(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.add, color: Color(0xFFFF6F61)),
+            label: const Text(
+              '고객사 등록',
+              style: TextStyle(
+                color: Color(0xFFFF6F61),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       ),
       body: SafeArea(
         child: Column(
@@ -523,8 +543,13 @@ class CustomerHqSelectionScreen extends StatelessWidget {
 // ========================================
 class CustomerListByHqScreen extends StatefulWidget {
   final String selectedHq;
+  final bool skipCsvLoad; // CSV 로드 건너뛰기 (등록 후 목록 화면 이동 시 사용)
 
-  const CustomerListByHqScreen({super.key, required this.selectedHq});
+  const CustomerListByHqScreen({
+    super.key,
+    required this.selectedHq,
+    this.skipCsvLoad = false,
+  });
 
   @override
   State<CustomerListByHqScreen> createState() => _CustomerListByHqScreenState();
@@ -618,20 +643,31 @@ class _CustomerListByHqScreenState extends State<CustomerListByHqScreen> {
       debugPrint('🔍 [RBAC] getFiltered 호출 전 - 사용자: ${currentUser?.id ?? "없음"}, Role: ${currentUser?.role}, Scope: ${currentUser?.scope}');
       
       // [CSV] Firebase Storage에서 customerlist.csv 로드 시도 (없으면 assets fallback)
-      try {
-        final csvText = await CsvService.load('customerlist.csv');
-        if (csvText.isNotEmpty) {
-          debugPrint('customerlist.csv 로드 성공, 파싱 시작...');
-          final rows = CsvParserExtended.parseCustomerBase(csvText);
-          final validCustomers = rows.where((r) => r.data != null).map((r) => r.data!).toList();
-          if (validCustomers.isNotEmpty) {
-            debugPrint('customerlist.csv에서 ${validCustomers.length}건 파싱, Repository에 교체(REPLACE)...');
-            await customerRepo.replaceFromCsv(validCustomers); // 기존 데이터 완전 교체
-            debugPrint('customerlist.csv 교체 완료');
+      // 주의: CSV 파일이 있으면 기존 데이터를 덮어쓰므로, 등록한 데이터가 사라질 수 있음
+      // 초기 로딩 시에만 CSV를 로드하고, 이후에는 Repository 데이터를 우선 사용
+      // skipCsvLoad가 true면 CSV 로드 건너뛰기 (등록 후 목록 화면 이동 시)
+      if (_isInitialLoad && !widget.skipCsvLoad) {
+        try {
+          final csvText = await CsvService.load('customerlist.csv');
+          if (csvText.isNotEmpty) {
+            debugPrint('customerlist.csv 로드 성공, 파싱 시작...');
+            final rows = CsvParserExtended.parseCustomerBase(csvText);
+            final validCustomers = rows.where((r) => r.data != null).map((r) => r.data!).toList();
+            if (validCustomers.isNotEmpty) {
+              debugPrint('customerlist.csv에서 ${validCustomers.length}건 파싱, Repository에 교체(REPLACE)...');
+              await customerRepo.replaceFromCsv(validCustomers); // 기존 데이터 완전 교체
+              debugPrint('customerlist.csv 교체 완료');
+            }
           }
+        } catch (e) {
+          debugPrint('⚠️ customerlist.csv 로드 실패 (무시): $e');
         }
-      } catch (e) {
-        debugPrint('⚠️ customerlist.csv 로드 실패 (무시): $e');
+      } else {
+        if (widget.skipCsvLoad) {
+          debugPrint('📋 skipCsvLoad=true이므로 CSV 파일 로드 건너뜀 (등록한 데이터 보존)');
+        } else {
+          debugPrint('📋 초기 로딩이 아니므로 CSV 파일 로드 건너뜀 (등록한 데이터 보존)');
+        }
       }
       
       // RBAC 필터링된 고객 목록 가져오기
@@ -1181,6 +1217,7 @@ class _CustomerListScreenState extends State<CustomerListScreen> {
   String? _selectedSalesStatus;
   bool _isLoading = true;
   String? _errorMessage;
+  bool _isInitialLoad = true; // 초기 로딩 여부
   
   final List<String> _salesStatusOptions = ['영업전', '영업중', '영업실패', '영업성공'];
 
@@ -1207,20 +1244,26 @@ class _CustomerListScreenState extends State<CustomerListScreen> {
       debugPrint('🔍 [RBAC] getFiltered 호출 전 - 사용자: ${currentUser?.id ?? "없음"}, Role: ${currentUser?.role}, Scope: ${currentUser?.scope}');
       
       // [CSV] Firebase Storage에서 customerlist.csv 로드 시도 (없으면 assets fallback)
-      try {
-        final csvText = await CsvService.load('customerlist.csv');
-        if (csvText.isNotEmpty) {
-          debugPrint('customerlist.csv 로드 성공, 파싱 시작...');
-          final rows = CsvParserExtended.parseCustomerBase(csvText);
-          final validCustomers = rows.where((r) => r.data != null).map((r) => r.data!).toList();
-          if (validCustomers.isNotEmpty) {
-            debugPrint('customerlist.csv에서 ${validCustomers.length}건 파싱, Repository에 교체(REPLACE)...');
-            await customerRepo.replaceFromCsv(validCustomers); // 기존 데이터 완전 교체
-            debugPrint('customerlist.csv 교체 완료');
+      // 주의: CSV 파일이 있으면 기존 데이터를 덮어쓰므로, 등록한 데이터가 사라질 수 있음
+      // 초기 로딩 시에만 CSV를 로드하고, 이후에는 Repository 데이터를 우선 사용
+      if (_isInitialLoad) {
+        try {
+          final csvText = await CsvService.load('customerlist.csv');
+          if (csvText.isNotEmpty) {
+            debugPrint('customerlist.csv 로드 성공, 파싱 시작...');
+            final rows = CsvParserExtended.parseCustomerBase(csvText);
+            final validCustomers = rows.where((r) => r.data != null).map((r) => r.data!).toList();
+            if (validCustomers.isNotEmpty) {
+              debugPrint('customerlist.csv에서 ${validCustomers.length}건 파싱, Repository에 교체(REPLACE)...');
+              await customerRepo.replaceFromCsv(validCustomers); // 기존 데이터 완전 교체
+              debugPrint('customerlist.csv 교체 완료');
+            }
           }
+        } catch (e) {
+          debugPrint('⚠️ customerlist.csv 로드 실패 (무시): $e');
         }
-      } catch (e) {
-        debugPrint('⚠️ customerlist.csv 로드 실패 (무시): $e');
+      } else {
+        debugPrint('📋 초기 로딩이 아니므로 CSV 파일 로드 건너뜀 (등록한 데이터 보존)');
       }
       
       // RBAC 필터링된 고객 목록 가져오기
@@ -1236,6 +1279,7 @@ class _CustomerListScreenState extends State<CustomerListScreen> {
         _allCustomers = customerDataList;
         _filteredCustomers = customerDataList;
         _isLoading = false;
+        _isInitialLoad = false; // 초기 로딩 완료
         _errorMessage = null;
       });
       _filterCustomers();
@@ -1244,6 +1288,7 @@ class _CustomerListScreenState extends State<CustomerListScreen> {
       debugPrint('스택 트레이스: $stackTrace');
       setState(() {
         _isLoading = false;
+        _isInitialLoad = false; // 초기 로딩 완료 (에러 발생 시에도)
         _errorMessage = '고객사 데이터를 불러올 수 없습니다: ${e.toString()}';
       });
     }

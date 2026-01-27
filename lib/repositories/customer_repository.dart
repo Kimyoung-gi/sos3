@@ -218,4 +218,94 @@ class CustomerRepository {
       failReasonsTop3: failReasons.entries.take(3).map((e) => '${e.key}: ${e.value}').toList(),
     );
   }
+
+  /// 단일 고객 생성 또는 업데이트
+  /// customerKey 기반으로 중복 체크
+  /// forceUpdate: true면 중복 시 덮어쓰기, false면 중복 체크만 반환
+  /// 반환값: (성공 여부, 중복 여부, 생성된/업데이트된 Customer)
+  Future<(bool success, bool isDuplicate, Customer? customer)> createOrUpdateCustomer(
+    Customer newCustomer, {
+    bool forceUpdate = false,
+  }) async {
+    try {
+      final existing = await _loadAll();
+      final customerKey = newCustomer.customerKey;
+      
+      // 중복 체크 (customerKey 기반)
+      final existingCustomer = existing.firstWhere(
+        (c) => c.customerKey == customerKey,
+        orElse: () => Customer(
+          customerName: '',
+          openDate: '',
+          productName: '',
+          productType: '',
+          hq: '',
+          branch: '',
+          sellerName: '',
+          building: '',
+        ),
+      );
+      
+      final isDuplicate = existingCustomer.customerName.isNotEmpty;
+      
+      if (isDuplicate && !forceUpdate) {
+        // 중복이지만 덮어쓰기 안 함
+        return (false, true, null);
+      }
+      
+      // 기존 status, memo, favorites 백업
+      final statusRaw = await _prefs().then((p) => p.getString(_keyStatus));
+      final memoRaw = await _prefs().then((p) => p.getString(_keyMemo));
+      final favList = await getFavorites();
+      final statusMap = statusRaw != null && statusRaw.isNotEmpty
+          ? (jsonDecode(statusRaw) as Map<String, dynamic>?)?.map((k, v) => MapEntry(k as String, v?.toString() ?? '')) ?? {}
+          : <String, String>{};
+      final memoMap = memoRaw != null && memoRaw.isNotEmpty
+          ? (jsonDecode(memoRaw) as Map<String, dynamic>?)?.map((k, v) => MapEntry(k as String, v?.toString() ?? '')) ?? {}
+          : <String, String>{};
+      
+      Customer customerToSave;
+      if (isDuplicate && forceUpdate) {
+        // 기존 데이터의 status, memo, favorite 유지하면서 업데이트
+        customerToSave = newCustomer.copyWith(
+          salesStatus: statusMap[customerKey] ?? existingCustomer.salesStatus,
+          memo: memoMap[customerKey] ?? existingCustomer.memo,
+          isFavorite: favList.contains(customerKey) || existingCustomer.isFavorite,
+        );
+      } else {
+        // 신규 생성 (등록 시 입력한 초기값 사용)
+        customerToSave = newCustomer;
+      }
+      
+      // 기존 리스트에서 중복 제거 후 새 고객 추가/업데이트
+      final updatedList = existing.where((c) => c.customerKey != customerKey).toList();
+      updatedList.add(customerToSave);
+      
+      await _saveAll(updatedList);
+      
+      // status와 memo도 함께 저장 (등록 시 입력한 값 저장)
+      if (newCustomer.salesStatus.isNotEmpty) {
+        await setStatus(customerKey, newCustomer.salesStatus);
+      }
+      if (newCustomer.memo.isNotEmpty) {
+        await setMemo(customerKey, newCustomer.memo);
+      }
+      
+      debugPrint('✅ 고객 ${isDuplicate ? "업데이트" : "생성"} 완료: $customerKey');
+      return (true, isDuplicate, customerToSave);
+    } catch (e) {
+      debugPrint('❌ 고객 생성/업데이트 실패: $e');
+      return (false, false, null);
+    }
+  }
+
+  /// customerKey로 고객 조회
+  Future<Customer?> getCustomerByKey(String customerKey) async {
+    final all = await _loadAll();
+    try {
+      return all.firstWhere((c) => c.customerKey == customerKey);
+    } catch (e) {
+      return null;
+    }
+  }
 }
