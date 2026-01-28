@@ -67,6 +67,17 @@ service firebase.storage {
 
 **주의**: 이 규칙은 모든 인증된 사용자에게 읽기/쓰기 권한을 부여합니다. 테스트 후 반드시 아래 프로덕션 규칙으로 변경하세요.
 
+### ⚠️ 홈 프로모션 배너 업로드 오류 해결
+
+`home_promotions` 경로에 대한 권한 오류가 발생하는 경우:
+
+**방법 1: 임시 테스트 규칙 적용 (개발용)**
+위의 "임시 테스트 규칙"을 Firebase Console > Storage > Rules에 적용하세요.
+
+**방법 2: 프로덕션 규칙에 home_promotions 경로 추가**
+위의 "CSV 파일 업로드/다운로드 규칙"에 `home_promotions` 경로 규칙이 포함되어 있습니다. 
+Firebase Console에서 해당 규칙을 적용하세요.
+
 ## CSV 파일 업로드/다운로드 규칙 (프로덕션)
 
 Firebase Console > Storage > Rules에서 다음 규칙을 적용하세요:
@@ -77,6 +88,20 @@ service firebase.storage {
   match /b/{bucket}/o {
     // CSV 파일 경로
     match /csv/{filename} {
+      // 읽기: 모든 인증된 사용자 허용
+      allow read: if request.auth != null;
+      
+      // 쓰기: 관리자만 허용
+      allow write: if request.auth != null 
+        && request.auth.token.role == 'admin';
+      
+      // 삭제: 관리자만 허용
+      allow delete: if request.auth != null 
+        && request.auth.token.role == 'admin';
+    }
+    
+    // 홈 프로모션 배너 이미지 경로
+    match /home_promotions/{filename} {
       // 읽기: 모든 인증된 사용자 허용
       allow read: if request.auth != null;
       

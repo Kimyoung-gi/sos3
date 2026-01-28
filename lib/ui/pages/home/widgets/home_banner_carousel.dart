@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
 import '../../customer_register_page.dart';
-
+import 'package:first_app/repositories/promotion_banner_repository.dart';
 import '../../../theme/app_colors.dart';
 import '../../../theme/app_dimens.dart';
 import '../../../theme/app_text_styles.dart';
 
-/// 홈 배너 캐러셀 (PageView + dot indicator)
+/// 홈 배너 캐러셀 (프로모션 이미지 또는 기본 배너)
 class HomeBannerCarousel extends StatefulWidget {
   const HomeBannerCarousel({super.key});
 
@@ -27,47 +28,116 @@ class _HomeBannerCarouselState extends State<HomeBannerCarousel> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        // 배너 PageView
-        SizedBox(
-          height: AppDimens.bannerHeight,
-          child: PageView.builder(
-            controller: _pageController,
-            onPageChanged: (index) {
-              setState(() {
-                _currentPage = index;
-              });
-            },
-            itemCount: 3,
-            itemBuilder: (context, index) {
-              return _BannerCard(
-                index: index,
-                onTap: (action) => _handleBannerAction(context, action),
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 12),
-        // Dot indicator
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(
-            3,
-            (index) => Container(
-              width: 8,
-              height: 8,
-              margin: const EdgeInsets.symmetric(horizontal: 4),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _currentPage == index
-                    ? AppColors.primary
-                    : AppColors.divider,
+    final repo = context.watch<PromotionBannerRepository>();
+    
+    return StreamBuilder<List<String>>(
+      stream: repo.watchPromotionImageUrls(limit: 3),
+      builder: (context, snapshot) {
+        // 로딩 중
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Column(
+            children: [
+              SizedBox(
+                height: AppDimens.bannerHeight,
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(AppDimens.cardRadiusLarge),
+                    color: Colors.grey[200],
+                  ),
+                  child: const Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+
+        // 에러 또는 배너 0개: 기본 배너 표시
+        final imageUrls = snapshot.data ?? [];
+        if (imageUrls.isEmpty) {
+          return Column(
+            children: [
+              SizedBox(
+                height: AppDimens.bannerHeight,
+                child: PageView.builder(
+                  controller: _pageController,
+                  onPageChanged: (index) {
+                    setState(() {
+                      _currentPage = index;
+                    });
+                  },
+                  itemCount: 3,
+                  itemBuilder: (context, index) {
+                    return _BannerCard(
+                      index: index,
+                      onTap: (action) => _handleBannerAction(context, action),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(
+                  3,
+                  (index) => Container(
+                    width: 8,
+                    height: 8,
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _currentPage == index
+                          ? AppColors.primary
+                          : AppColors.divider,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+
+        // 프로모션 이미지 배너 표시 (1~3개)
+        return Column(
+          children: [
+            SizedBox(
+              height: AppDimens.bannerHeight,
+              child: PageView.builder(
+                controller: _pageController,
+                onPageChanged: (index) {
+                  setState(() {
+                    _currentPage = index;
+                  });
+                },
+                itemCount: imageUrls.length,
+                itemBuilder: (context, index) {
+                  return _PromotionBannerCard(imageUrl: imageUrls[index]);
+                },
               ),
             ),
-          ),
-        ),
-      ],
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                imageUrls.length,
+                (index) => Container(
+                  width: 8,
+                  height: 8,
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _currentPage == index
+                        ? AppColors.primary
+                        : AppColors.divider,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -89,6 +159,64 @@ class _HomeBannerCarouselState extends State<HomeBannerCarousel> {
         context.go('/main/3'); // 대시보드 탭
         break;
     }
+  }
+}
+
+/// 프로모션 이미지 배너 카드
+class _PromotionBannerCard extends StatelessWidget {
+  final String imageUrl;
+
+  const _PromotionBannerCard({required this.imageUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppDimens.cardRadiusLarge),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(AppDimens.shadowOpacity),
+            blurRadius: AppDimens.shadowBlur,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppDimens.cardRadiusLarge),
+        child: Image.network(
+          imageUrl,
+          height: AppDimens.bannerHeight,
+          width: double.infinity,
+          fit: BoxFit.cover,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Container(
+              color: Colors.grey[200],
+              child: Center(
+                child: CircularProgressIndicator(
+                  value: loadingProgress.expectedTotalBytes != null
+                      ? loadingProgress.cumulativeBytesLoaded /
+                          loadingProgress.expectedTotalBytes!
+                      : null,
+                ),
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) {
+            // 에러 시 기본 배너로 fallback
+            return Container(
+              decoration: BoxDecoration(
+                gradient: AppColors.bannerGradient,
+              ),
+              child: const Center(
+                child: Icon(Icons.error_outline, color: Colors.white70, size: 48),
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
 }
 

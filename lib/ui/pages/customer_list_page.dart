@@ -291,12 +291,7 @@ class _CustomerListPageState extends State<CustomerListPage> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
-        leading: IconButton(
-          icon: const Icon(Icons.menu, color: Color(0xFF1A1A1A)),
-          onPressed: () {
-            // 햄버거 메뉴 (필요시 구현)
-          },
-        ),
+        automaticallyImplyLeading: false,
         title: Padding(
           padding: const EdgeInsets.all(8.0),
           child: Image.asset(
