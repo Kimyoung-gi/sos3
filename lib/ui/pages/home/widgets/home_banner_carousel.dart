@@ -33,6 +33,13 @@ class _HomeBannerCarouselState extends State<HomeBannerCarousel> {
     return StreamBuilder<List<String>>(
       stream: repo.watchPromotionImageUrls(limit: 3),
       builder: (context, snapshot) {
+        // 에러 처리
+        if (snapshot.hasError) {
+          debugPrint('❌ 배너 스트림 에러: ${snapshot.error}');
+          // 에러 시 기본 배너 표시
+          return _buildDefaultBanner();
+        }
+
         // 로딩 중
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Column(
@@ -54,49 +61,11 @@ class _HomeBannerCarouselState extends State<HomeBannerCarousel> {
           );
         }
 
-        // 에러 또는 배너 0개: 기본 배너 표시
+        // 배너 0개: 기본 배너 표시
         final imageUrls = snapshot.data ?? [];
+        debugPrint('🏠 홈 배너 이미지 URL 개수: ${imageUrls.length}');
         if (imageUrls.isEmpty) {
-          return Column(
-            children: [
-              SizedBox(
-                height: AppDimens.bannerHeight,
-                child: PageView.builder(
-                  controller: _pageController,
-                  onPageChanged: (index) {
-                    setState(() {
-                      _currentPage = index;
-                    });
-                  },
-                  itemCount: 3,
-                  itemBuilder: (context, index) {
-                    return _BannerCard(
-                      index: index,
-                      onTap: (action) => _handleBannerAction(context, action),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(
-                  3,
-                  (index) => Container(
-                    width: 8,
-                    height: 8,
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _currentPage == index
-                          ? AppColors.primary
-                          : AppColors.divider,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          );
+          return _buildDefaultBanner();
         }
 
         // 프로모션 이미지 배너 표시 (1~3개)
@@ -138,6 +107,49 @@ class _HomeBannerCarouselState extends State<HomeBannerCarousel> {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildDefaultBanner() {
+    return Column(
+      children: [
+        SizedBox(
+          height: AppDimens.bannerHeight,
+          child: PageView.builder(
+            controller: _pageController,
+            onPageChanged: (index) {
+              setState(() {
+                _currentPage = index;
+              });
+            },
+            itemCount: 3,
+            itemBuilder: (context, index) {
+              return _BannerCard(
+                index: index,
+                onTap: (action) => _handleBannerAction(context, action),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(
+            3,
+            (index) => Container(
+              width: 8,
+              height: 8,
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _currentPage == index
+                    ? AppColors.primary
+                    : AppColors.divider,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -205,6 +217,9 @@ class _PromotionBannerCard extends StatelessWidget {
           },
           errorBuilder: (context, error, stackTrace) {
             // 에러 시 기본 배너로 fallback
+            debugPrint('❌ 배너 이미지 로딩 실패: imageUrl=$imageUrl');
+            debugPrint('에러: $error');
+            debugPrint('스택 트레이스: $stackTrace');
             return Container(
               decoration: BoxDecoration(
                 gradient: AppColors.bannerGradient,

@@ -33,6 +33,15 @@ service cloud.firestore {
         && request.auth.token.role == 'admin';
     }
     
+    // 홈 프로모션 배너
+    match /home_promotions/{document} {
+      // 읽기: 모든 사용자 허용 (홈 화면에서 표시)
+      allow read: if true;
+      
+      // 쓰기: 관리자만 허용 (현재는 Firebase Auth 미사용이므로 임시로 true)
+      allow write: if true;
+    }
+    
     // 기타 컬렉션 규칙...
   }
 }
@@ -55,6 +64,11 @@ service cloud.firestore {
     // CSV 업로드 이력
     match /csv_upload_history/{document} {
       allow read, write: if request.auth != null;
+    }
+    
+    // 홈 프로모션 배너 (개발용 - 모든 사용자 허용)
+    match /home_promotions/{document} {
+      allow read, write: if true;
     }
   }
 }

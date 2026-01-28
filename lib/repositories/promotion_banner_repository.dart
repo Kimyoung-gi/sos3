@@ -14,31 +14,76 @@ class PromotionBannerRepository {
 
   /// 프로모션 배너 이미지 URL 목록 스트림 (최대 3개)
   Stream<List<String>> watchPromotionImageUrls({int limit = 3}) {
-    return _firestore
-        .collection(_collection)
-        .orderBy('createdAt', descending: true)
-        .limit(limit)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => doc.data()['imageUrl'] as String? ?? '')
-          .where((url) => url.isNotEmpty)
-          .toList();
-    });
+    try {
+      debugPrint('📡 배너 스트림 구독 시작: collection=$_collection');
+      return _firestore
+          .collection(_collection)
+          .snapshots()
+          .map((snapshot) {
+        debugPrint('📦 배너 스냅샷 수신: 문서 개수=${snapshot.docs.length}');
+        
+        final urls = <String>[];
+        for (final doc in snapshot.docs) {
+          try {
+            final data = doc.data();
+            final url = data['imageUrl'] as String? ?? '';
+            debugPrint('📋 배너 데이터: docId=${doc.id}, imageUrl=$url, source=${data['source']}');
+            if (url.isNotEmpty) {
+              urls.add(url);
+            }
+          } catch (e) {
+            debugPrint('⚠️ 배너 문서 파싱 오류 (docId=${doc.id}): $e');
+          }
+        }
+        
+        debugPrint('✅ 배너 URL 목록: ${urls.length}개 - $urls');
+        
+        // 최대 limit개만 반환
+        return urls.take(limit).toList();
+      }).handleError((error, stackTrace) {
+        debugPrint('❌ 배너 스트림 오류: $error');
+        debugPrint('스택 트레이스: $stackTrace');
+        return <String>[];
+      });
+    } catch (e, stackTrace) {
+      debugPrint('❌ 배너 스트림 생성 실패: $e');
+      debugPrint('스택 트레이스: $stackTrace');
+      return Stream.value(<String>[]);
+    }
   }
 
   /// 프로모션 배너 전체 목록 스트림 (관리자용)
   Stream<List<HomePromotion>> watchPromotions({int limit = 3}) {
-    return _firestore
-        .collection(_collection)
-        .orderBy('createdAt', descending: true)
-        .limit(limit)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => HomePromotion.fromFirestore(doc.id, doc.data()))
-          .toList();
-    });
+    try {
+      return _firestore
+          .collection(_collection)
+          .snapshots()
+          .map((snapshot) {
+        final promotions = snapshot.docs
+            .map((doc) {
+              try {
+                return HomePromotion.fromFirestore(doc.id, doc.data());
+              } catch (e) {
+                debugPrint('❌ 배너 파싱 오류 (docId=${doc.id}): $e');
+                return null;
+              }
+            })
+            .whereType<HomePromotion>()
+            .toList();
+        
+        // createdAt 기준으로 정렬 (내림차순)
+        promotions.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        
+        // 최대 limit개만 반환
+        return promotions.take(limit).toList();
+      }).handleError((error) {
+        debugPrint('❌ 배너 목록 스트림 오류: $error');
+        return <HomePromotion>[];
+      });
+    } catch (e) {
+      debugPrint('❌ 배너 목록 스트림 생성 실패: $e');
+      return Stream.value(<HomePromotion>[]);
+    }
   }
 
   /// 현재 배너 개수 확인
