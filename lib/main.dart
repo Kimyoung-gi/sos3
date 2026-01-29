@@ -270,6 +270,9 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   late int _currentIndex; // 최초 진입은 고객사 탭
+
+  // [MORE] 더보기 탭 누를 때마다 메뉴만 보이도록 중첩 Navigator 제어
+  final GlobalKey<NavigatorState> _moreNavigatorKey = GlobalKey<NavigatorState>();
   
   // [FAV] 즐겨찾기 상태 관리
   Set<String> _favoriteCustomerKeys = {};
@@ -359,12 +362,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           CustomerListPage(), // 고객사
           FrontierHqSelectionScreen(), // 프론티어
           DashboardScreen(), // 대시보드
-          MoreScreen(), // 더보기
+          MoreScreen(navigatorKey: _moreNavigatorKey), // 더보기
         ],
       ),
       bottomNavigationBar: CustomBottomNav(
         currentIndex: _currentIndex,
         onTap: (index) {
+          // [MORE] 더보기 탭 누르면 무조건 더보기 메뉴(첫 화면)만 표시
+          if (index == 4) {
+            _moreNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+          }
           setState(() {
             _currentIndex = index;
           });
@@ -8743,7 +8750,9 @@ class _ODScreenState extends State<ODScreen> {
 // 더보기 화면
 // ========================================
 class MoreScreen extends StatefulWidget {
-  const MoreScreen({super.key});
+  final GlobalKey<NavigatorState>? navigatorKey;
+
+  const MoreScreen({super.key, this.navigatorKey});
 
   @override
   State<MoreScreen> createState() => _MoreScreenState();
@@ -8795,9 +8804,46 @@ class _MoreScreenState extends State<MoreScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 중첩 Navigator: 즐겨찾기/OD 등 서브 화면으로 갈 때도 하단 네비게이션 바 유지
+    return Navigator(
+      key: widget.navigatorKey ?? ValueKey('more_tab'),
+      initialRoute: '/',
+      onGenerateRoute: (settings) {
+        if (settings.name == '/') {
+          return MaterialPageRoute(
+            builder: (_) => _MoreMenuContent(
+              favoriteKeys: _favoriteCustomerKeys,
+              toggleFavorite: toggleFavorite,
+              isFavorite: isFavorite,
+              onLoadFavorites: _loadFavorites,
+            ),
+          );
+        }
+        return null;
+      },
+    );
+  }
+}
+
+// 더보기 메뉴 목록 (중첩 Navigator의 첫 화면)
+class _MoreMenuContent extends StatelessWidget {
+  final Set<String> favoriteKeys;
+  final Future<void> Function(String) toggleFavorite;
+  final bool Function(String) isFavorite;
+  final Future<void> Function() onLoadFavorites;
+
+  const _MoreMenuContent({
+    required this.favoriteKeys,
+    required this.toggleFavorite,
+    required this.isFavorite,
+    required this.onLoadFavorites,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     final authService = context.watch<AuthService>();
     final currentUser = authService.currentUser;
-    
+
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
@@ -8888,18 +8934,16 @@ class _MoreScreenState extends State<MoreScreen> {
                       title: '즐겨찾기',
                       icon: Icons.star,
                       onTap: () {
+                        // 이 Navigator는 MoreScreen 내부이므로 push 시 하단 네비 유지
                         Navigator.of(context).push(
                           MaterialPageRoute(
                             builder: (context) => FavoritesScreen(
-                              favoriteKeys: _favoriteCustomerKeys,
+                              favoriteKeys: favoriteKeys,
                               onToggleFavorite: toggleFavorite,
                               isFavorite: isFavorite,
                             ),
                           ),
-                        ).then((_) {
-                          // 즐겨찾기 화면에서 돌아올 때 상태 갱신
-                          _loadFavorites();
-                        });
+                        ).then((_) => onLoadFavorites());
                       },
                     ),
                     const SizedBox(height: 16),

@@ -1,5 +1,18 @@
 # Firestore 권한 오류 해결 가이드
 
+## 🚨 CSV 업로드 권한 오류 (Missing or insufficient permissions)
+
+**증상**: 관리자로 로그인 후 `customerlist.csv` 등 CSV 업로드 시  
+`[cloud_firestore/permission-denied] Missing or insufficient permissions` 발생.
+
+**원인**: Firestore 규칙에서 `request.auth.token.role == 'admin'`을 요구하는데,  
+Firebase Auth **커스텀 클레임(role)** 이 설정되어 있지 않아 거부됨.
+
+**해결**: 아래 "Firebase Console에서 Firestore 규칙 수정"을 따라  
+**개발/테스트용 규칙**을 한 번 적용하면 CSV 업로드·이력·홈 프로모션이 동작합니다.
+
+---
+
 ## 🚨 문제: 홈 화면에 배너가 표시되지 않음
 
 관리자 사이트에서 이미지를 등록했는데 홈 화면에 표시되지 않는 경우, Firestore 보안 규칙에 `home_promotions` 컬렉션 규칙이 없어서 발생할 수 있습니다.
@@ -12,13 +25,13 @@
 2. **프로젝트 선택**: SOS 2.0 프로젝트
 3. **Firestore Database 메뉴 클릭**
 4. **Rules 탭 클릭**
-5. **다음 규칙을 복사하여 붙여넣기** (개발용 - 모든 사용자 허용):
+5. **기존 Rules 내용을 전부 지우고**, 아래 규칙을 **통째로** 복사해 붙여넣기 (개발/테스트용):
 
 ```javascript
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // CSV 파일 저장소
+    // CSV 파일 저장소 (업로드 시 permission-denied 해결)
     match /csv_files/{filename} {
       allow read, write: if true;
     }
@@ -28,16 +41,21 @@ service cloud.firestore {
       allow read, write: if true;
     }
     
-    // 홈 프로모션 배너 (추가 필요!)
+    // 홈 프로모션 배너
     match /home_promotions/{document} {
-      allow read: if true;  // 홈 화면에서 읽기 허용
-      allow write: if true; // 관리자에서 쓰기 허용 (개발용)
+      allow read, write: if true;
+    }
+    
+    // users 컬렉션 (앱에서 사용 시)
+    match /users/{userId} {
+      allow read, write: if true;
     }
   }
 }
 ```
 
 6. **"게시" 버튼 클릭**
+7. 1~2분 후 앱에서 CSV 업로드 다시 시도
 
 ## ⚠️ 보안 주의사항
 
