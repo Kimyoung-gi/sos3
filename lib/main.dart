@@ -39,7 +39,6 @@ import 'repositories/customer_repository.dart';
 import 'repositories/sales_status_repository.dart';
 import 'repositories/performance_repository.dart';
 import 'repositories/upload_history_repository.dart';
-import 'repositories/promotion_banner_repository.dart';
 import 'utils/customer_converter.dart';
 import 'utils/csv_parser_extended.dart';
 import 'ui/pages/login_page.dart';
@@ -90,7 +89,6 @@ void main() async {
         Provider.value(value: SalesStatusRepository()),
         Provider.value(value: PerformanceRepository()),
         Provider.value(value: UploadHistoryRepository()),
-        Provider.value(value: PromotionBannerRepository()),
       ],
       child: const SOSApp(),
     ),

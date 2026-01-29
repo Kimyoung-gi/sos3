@@ -18,9 +18,8 @@ import '../../utils/csv_parser_extended.dart';
 import '../../utils/csv_template_generator.dart';
 import '../../utils/csv_downloader.dart';
 import 'admin_csv_upload_page.dart';
-import 'admin_promotions_page.dart';
 
-/// 관리자 홈 페이지: 사이드바 + 3개 탭 (사용자 관리, CSV 업로드, 홈 프로모션)
+/// 관리자 홈 페이지: 사이드바 + 2개 탭 (사용자 관리, CSV 업로드)
 class AdminHomePage extends StatefulWidget {
   const AdminHomePage({super.key});
 
@@ -35,7 +34,7 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) {
         setState(() => _selectedIndex = _tabController.index);
@@ -55,8 +54,6 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
         return const _UserManagementTab();
       case 1:
         return AdminCsvUploadPage();
-      case 2:
-        return const AdminPromotionsPage();
       default:
         return const _UserManagementTab();
     }
@@ -81,7 +78,6 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
             tabs: const [
               Tab(icon: Icon(Icons.people), text: '사용자 관리'),
               Tab(icon: Icon(Icons.cloud_upload), text: 'CSV 업로드'),
-              Tab(icon: Icon(Icons.image), text: '홈 프로모션'),
             ],
           ),
         ),

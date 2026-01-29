@@ -1,5 +1,12 @@
 # Firebase Storage CORS 설정 가이드
 
+## ⚠️ 배너 이미지가 안 나오고 "statusCode: 0" 에러가 날 때
+
+웹에서 Firebase Storage 이미지를 불러올 때 **CORS** 때문에 브라우저가 요청을 막으면 `statusCode: 0`이 납니다.  
+아래 **방법 1(Google Cloud Shell)** 또는 **방법 2(gsutil)** 로 버킷에 CORS를 한 번 적용하면 됩니다.
+
+---
+
 ## 현재 상태
 - ❌ CORS 오류 발생 중
 - ✅ Assets fallback으로 정상 동작 중
@@ -7,7 +14,21 @@
 
 ## CORS 설정 방법
 
-### 방법 1: gsutil 사용 (가장 확실한 방법)
+### 방법 1: Google Cloud Shell 사용 (설치 없음, 권장)
+
+1. **Google Cloud Console** 접속: https://console.cloud.google.com  
+2. 상단에서 프로젝트 **sos2-49d94** 선택  
+3. 오른쪽 상단 **터미널 아이콘(>_)** 클릭 → **Cloud Shell** 열기  
+4. 아래 명령을 **한 번에** 복사해서 붙여넣고 실행:
+
+```bash
+echo '[{"origin": ["*"],"method": ["GET", "HEAD", "PUT", "POST", "DELETE"],"maxAgeSeconds": 3600,"responseHeader": ["Content-Type", "Access-Control-Allow-Origin"]}]' > cors.json && gsutil cors set cors.json gs://sos2-49d94.firebasestorage.app && gsutil cors get gs://sos2-49d94.firebasestorage.app
+```
+
+5. `CORS configuration updated` 비슷한 메시지가 나오면 성공  
+6. 브라우저 **캐시 삭제**(Ctrl+Shift+Delete) 후 앱 새로고침
+
+### 방법 2: gsutil 사용 (PC에 SDK 설치)
 
 #### 1단계: Google Cloud SDK 설치
 - Windows: https://cloud.google.com/sdk/docs/install
@@ -30,7 +51,7 @@ gsutil cors set cors.json gs://sos2-49d94.firebasestorage.app
 gsutil cors get gs://sos2-49d94.firebasestorage.app
 ```
 
-### 방법 2: Firebase Console 사용 (간단하지만 제한적)
+### 방법 3: Firebase Console 사용 (간단하지만 제한적)
 
 1. Firebase Console 접속: https://console.firebase.google.com
 2. 프로젝트 선택: `sos2-49d94`
@@ -52,7 +73,7 @@ gsutil cors get gs://sos2-49d94.firebasestorage.app
 
 **주의**: Firebase Console의 CORS 설정은 일부 기능이 제한될 수 있습니다. gsutil 사용을 권장합니다.
 
-### 방법 3: gcloud CLI 사용
+### 방법 4: gcloud CLI 사용
 
 ```bash
 # gcloud CLI 설치 후
