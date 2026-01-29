@@ -17,6 +17,7 @@ class CustomerConverter {
       isFavorite: c.isFavorite,
       salesStatus: c.salesStatus,
       memo: c.memo,
+      personInCharge: c.personInCharge,
     );
   }
 
@@ -34,6 +35,7 @@ class CustomerConverter {
       isFavorite: cd.isFavorite,
       salesStatus: cd.salesStatus,
       memo: cd.memo,
+      personInCharge: cd.personInCharge,
     );
   }
 

@@ -115,13 +115,14 @@ class CustomerCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 4),
-              // 개통일자
+              // 개통일자 + 담당자
               Text(
-                customer.openedAt,
+                '${customer.openedAt}  ${customer.personInCharge.isEmpty ? "담당자 없음" : customer.personInCharge}',
                 style: TextStyle(
                   fontSize: 13,
                   color: Colors.grey[600],
                 ),
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),

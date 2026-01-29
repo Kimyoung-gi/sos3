@@ -223,7 +223,8 @@ class _CustomerListPageState extends State<CustomerListPage> {
         final matchesName = customer.customerName.toLowerCase().contains(searchQuery);
         final matchesProductName = customer.productName.toLowerCase().contains(searchQuery);
         final matchesProductType = customer.productType.toLowerCase().contains(searchQuery);
-        return matchesName || matchesProductName || matchesProductType;
+        final matchesPersonInCharge = customer.personInCharge.toLowerCase().contains(searchQuery);
+        return matchesName || matchesProductName || matchesProductType || matchesPersonInCharge;
       }).toList();
     }
     
@@ -291,12 +292,7 @@ class _CustomerListPageState extends State<CustomerListPage> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
-        leading: IconButton(
-          icon: const Icon(Icons.menu, color: Color(0xFF1A1A1A)),
-          onPressed: () {
-            // 햄버거 메뉴 (필요시 구현)
-          },
-        ),
+        automaticallyImplyLeading: false,
         title: Padding(
           padding: const EdgeInsets.all(8.0),
           child: Image.asset(
@@ -332,7 +328,7 @@ class _CustomerListPageState extends State<CustomerListPage> {
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: '고객명 또는 상품명 검색',
+                hintText: '고객명 또는 담당자 검색',
                 prefixIcon: const Icon(Icons.search, color: Colors.grey),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),

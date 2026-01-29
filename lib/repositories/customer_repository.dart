@@ -243,6 +243,7 @@ class CustomerRepository {
           branch: '',
           sellerName: '',
           building: '',
+          personInCharge: '',
         ),
       );
       

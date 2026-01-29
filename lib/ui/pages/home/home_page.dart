@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 import '../../theme/app_colors.dart';
 import '../../theme/app_dimens.dart';
-import '../../theme/app_text_styles.dart';
 import 'widgets/home_banner_carousel.dart';
 import 'widgets/home_quick_actions.dart';
 import 'widgets/home_recent_activity.dart';
@@ -32,21 +30,7 @@ class HomePage extends StatelessWidget {
               ),
             ),
             leadingWidth: 120,
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.search, color: AppColors.textPrimary),
-                onPressed: () {
-                  // 검색 기능 (추후 구현)
-                },
-              ),
-              IconButton(
-                icon: const Icon(Icons.notifications_outlined, color: AppColors.textPrimary),
-                onPressed: () {
-                  // 알림 기능 (추후 구현)
-                },
-              ),
-              const SizedBox(width: 8),
-            ],
+            actions: const [],
             floating: true,
             snap: true,
           ),

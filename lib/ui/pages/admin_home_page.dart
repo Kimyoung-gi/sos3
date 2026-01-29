@@ -19,7 +19,7 @@ import '../../utils/csv_template_generator.dart';
 import '../../utils/csv_downloader.dart';
 import 'admin_csv_upload_page.dart';
 
-/// 관리자 홈 페이지: 사이드바 + 3개 탭 (CSV 업로드, 사용자 관리, 권한 미리보기)
+/// 관리자 홈 페이지: 사이드바 + 2개 탭 (사용자 관리, CSV 업로드)
 class AdminHomePage extends StatefulWidget {
   const AdminHomePage({super.key});
 
@@ -34,7 +34,7 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) {
         setState(() => _selectedIndex = _tabController.index);
@@ -51,13 +51,11 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
   Widget _buildSelectedTab() {
     switch (_selectedIndex) {
       case 0:
-        return AdminCsvUploadPage();
-      case 1:
         return const _UserManagementTab();
-      case 2:
-        return const _PermissionPreviewTab();
-      default:
+      case 1:
         return AdminCsvUploadPage();
+      default:
+        return const _UserManagementTab();
     }
   }
 
@@ -78,9 +76,8 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
               setState(() => _selectedIndex = index);
             },
             tabs: const [
-              Tab(icon: Icon(Icons.cloud_upload), text: 'CSV 업로드'),
               Tab(icon: Icon(Icons.people), text: '사용자 관리'),
-              Tab(icon: Icon(Icons.visibility), text: '권한 미리보기'),
+              Tab(icon: Icon(Icons.cloud_upload), text: 'CSV 업로드'),
             ],
           ),
         ),
@@ -102,7 +99,7 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
             tooltip: '로그아웃',
             onPressed: () async {
               await auth.logout();
-              if (mounted) context.go('/');
+              if (mounted) context.go('/login');
             },
           ),
         ],
@@ -896,27 +893,27 @@ class _UserManagementTabState extends State<_UserManagementTab> {
                   Row(
                     children: [
                       const Text('사용자 관리', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                const Spacer(),
-                SizedBox(
-                  width: 240,
-                  child: TextField(
-                    decoration: InputDecoration(
-                      hintText: '검색 (아이디/이름/본부/지사)',
-                      prefixIcon: const Icon(Icons.search, size: 20),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    ),
-                    onChanged: (v) => setState(() => _searchQuery = v),
+                      const SizedBox(width: 16),
+                      FilledButton.icon(
+                        onPressed: _showCreateDialog,
+                        icon: const Icon(Icons.add),
+                        label: const Text('사용자 생성'),
+                      ),
+                      const Spacer(),
+                      SizedBox(
+                        width: 240,
+                        child: TextField(
+                          decoration: InputDecoration(
+                            hintText: '검색 (아이디/이름/본부/지사)',
+                            prefixIcon: const Icon(Icons.search, size: 20),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          ),
+                          onChanged: (v) => setState(() => _searchQuery = v),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(width: 16),
-                FilledButton.icon(
-                  onPressed: _showCreateDialog,
-                  icon: const Icon(Icons.add),
-                  label: const Text('사용자 생성'),
-                ),
-              ],
-            ),
             const SizedBox(height: 16),
             _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -1455,163 +1452,3 @@ class _UserEditDialogState extends State<_UserEditDialog> {
   }
 }
 
-/// 권한 미리보기 탭
-class _PermissionPreviewTab extends StatefulWidget {
-  const _PermissionPreviewTab();
-
-  @override
-  State<_PermissionPreviewTab> createState() => _PermissionPreviewTabState();
-}
-
-class _PermissionPreviewTabState extends State<_PermissionPreviewTab> {
-  User? _selectedUser;
-  List<User> _users = [];
-  List<Customer> _previewCustomers = [];
-  bool _loading = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadUsers();
-  }
-
-  Future<void> _loadUsers() async {
-    try {
-      final repo = context.read<UserRepository>();
-      final list = await repo.list();
-      if (!mounted) return;
-      setState(() => _users = list);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('로드 실패: $e'), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
-
-  Future<void> _preview() async {
-    if (_selectedUser == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('사용자를 선택하세요.'), backgroundColor: Colors.orange),
-      );
-      return;
-    }
-    setState(() => _loading = true);
-    try {
-      final repo = context.read<CustomerRepository>();
-      final filtered = await repo.getFiltered(_selectedUser);
-      if (!mounted) return;
-      setState(() {
-        _previewCustomers = filtered;
-        _loading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('미리보기 실패: $e'), backgroundColor: Colors.red),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return ConstrainedBox(
-          constraints: BoxConstraints(
-            minWidth: constraints.maxWidth,
-            minHeight: constraints.maxHeight,
-            maxWidth: constraints.maxWidth,
-            maxHeight: constraints.maxHeight,
-          ),
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('권한 미리보기', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                SizedBox(
-                  width: 300,
-                  child: DropdownButtonFormField<User?>(
-                    value: _selectedUser,
-                    decoration: const InputDecoration(labelText: '사용자 선택', border: OutlineInputBorder()),
-                    items: [
-                      const DropdownMenuItem(value: null, child: Text('선택하세요')),
-                      ..._users.map((u) => DropdownMenuItem(value: u, child: Text('${u.name} (${u.id}) - ${u.roleLabel}/${u.scopeLabel}'))),
-                    ],
-                    onChanged: (v) => setState(() => _selectedUser = v),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                FilledButton(
-                  onPressed: _loading ? null : _preview,
-                  child: _loading
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Text('미리보기'),
-                ),
-                if (_selectedUser != null) ...[
-                  const SizedBox(width: 16),
-                  Text('권한: ${_selectedUser!.roleLabel} / ${_selectedUser!.scopeLabel}'),
-                ],
-              ],
-            ),
-            const SizedBox(height: 24),
-            _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _previewCustomers.isNotEmpty
-                    ? Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text('조회 가능한 고객: ${_previewCustomers.length}건', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 8),
-                          Card(
-                            child: SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: SingleChildScrollView(
-                                child: DataTable(
-                                  columns: const [
-                                    DataColumn(label: Text('고객명')),
-                                    DataColumn(label: Text('개통일자')),
-                                    DataColumn(label: Text('상품명')),
-                                    DataColumn(label: Text('본부')),
-                                    DataColumn(label: Text('지사')),
-                                    DataColumn(label: Text('판매자')),
-                                  ],
-                                  rows: _previewCustomers.map((c) {
-                                    return DataRow(
-                                      cells: [
-                                        DataCell(Text(c.customerName)),
-                                        DataCell(Text(c.openDate)),
-                                        DataCell(Text(c.productName)),
-                                        DataCell(Text(c.hq)),
-                                        DataCell(Text(c.branch)),
-                                        DataCell(Text(c.sellerName)),
-                                      ],
-                                    );
-                                  }).toList(),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      )
-                    : const Center(
-                        child: Text('사용자를 선택하고 미리보기를 클릭하세요.', style: TextStyle(color: Colors.grey)),
-                      ),
-          ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}

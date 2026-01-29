@@ -47,6 +47,8 @@ import 'ui/pages/admin_home_page.dart';
 import 'ui/pages/customer_register_page.dart';
 import 'ui/pages/customer_list_page.dart';
 import 'ui/pages/home/home_page.dart';
+import 'ui/widgets/custom_bottom_nav.dart';
+import 'ui/widgets/frame_shell.dart';
 
 void main() async {
   // Flutter 바인딩 초기화 (필수)
@@ -140,25 +142,35 @@ Future<String?> _loadCsvFile(String fileName) async {
 // ========================================
 GoRouter createRouter(AuthService authService) {
   return GoRouter(
-    initialLocation: '/',
+    initialLocation: '/login',
     redirect: (context, state) {
       final isLoggedIn = authService.isLoggedIn;
       final isAdmin = authService.isAdmin;
       final path = state.uri.path;
       
-      // 로그인 페이지는 로그인 안 된 경우만
-      if (path == '/' || path == '/admin-login') {
+      // 루트(/)는 로그인 페이지(/login)로 보낸다.
+      // (웹에서 첫 진입이 / 인 경우가 많아서, /login을 표준 경로로 사용)
+      if (path == '/') {
         if (isLoggedIn) {
-          // Admin은 관리자 페이지로, 일반 사용자는 홈으로
-          // (Admin은 나중에 일반 페이지로도 이동 가능)
-          return isAdmin ? '/admin' : '/main/0'; // 홈 탭(index 0)
+          return isAdmin ? '/admin' : '/main/0';
         }
+        return '/login';
+      }
+
+      // 일반 로그인(/login): 로그인 성공 시 항상 메인 페이지로 (ADMIN 권한이어도 메인으로)
+      if (path == '/login') {
+        if (isLoggedIn) return '/main/0';
+        return null;
+      }
+      // 관리자 로그인(/admin-login): 로그인 성공 시 ADMIN이면 관리자 페이지, 아니면 메인
+      if (path == '/admin-login') {
+        if (isLoggedIn) return isAdmin ? '/admin' : '/main/0';
         return null;
       }
       
       // 보호된 경로: 로그인 필요
       if (path.startsWith('/main') || path.startsWith('/admin')) {
-        if (!isLoggedIn) return '/';
+        if (!isLoggedIn) return '/login';
         // Admin은 /admin과 /main 모두 접근 가능
         // 일반 사용자는 /main만 접근 가능
         if (path.startsWith('/admin') && !isAdmin) return '/main';
@@ -169,27 +181,38 @@ GoRouter createRouter(AuthService authService) {
     refreshListenable: authService,
     routes: [
       GoRoute(
-        path: '/',
-        builder: (context, state) => const LoginPage(),
-      ),
-      GoRoute(
         path: '/admin-login',
         builder: (context, state) => const AdminLoginPage(),
       ),
       GoRoute(
-        path: '/main',
-        builder: (context, state) => const MainNavigationScreen(),
-      ),
-      GoRoute(
-        path: '/main/:tab',
-        builder: (context, state) {
-          final tab = state.pathParameters['tab'] ?? '0';
-          return MainNavigationScreen(initialTab: int.tryParse(tab) ?? 0);
-        },
-      ),
-      GoRoute(
         path: '/admin',
         builder: (context, state) => const AdminHomePage(),
+      ),
+      // 관리자 사이트는 기존 UI/동작을 유지해야 하므로 ShellRoute(프레임) 밖에 둔다.
+      // 그 외(일반 사용자/로그인 등)만 PC 웹에서 394×811 모바일 프레임으로 렌더링.
+      ShellRoute(
+        builder: (context, state, child) => FrameShell(child: child),
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (context, state) => const LoginPage(),
+          ),
+          GoRoute(
+            path: '/login',
+            builder: (context, state) => const LoginPage(),
+          ),
+          GoRoute(
+            path: '/main',
+            builder: (context, state) => const MainNavigationScreen(),
+          ),
+          GoRoute(
+            path: '/main/:tab',
+            builder: (context, state) {
+              final tab = state.pathParameters['tab'] ?? '0';
+              return MainNavigationScreen(initialTab: int.tryParse(tab) ?? 0);
+            },
+          ),
+        ],
       ),
     ],
   );
@@ -339,45 +362,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           MoreScreen(), // 더보기
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (index) {
+      bottomNavigationBar: CustomBottomNav(
+        currentIndex: _currentIndex,
+        onTap: (index) {
           setState(() {
             _currentIndex = index;
           });
           // [WEB] URL 업데이트
           context.go('/main/$index');
         },
-        backgroundColor: Colors.white,
-        indicatorColor: const Color(0xFFFFE8E6), // 연한 코랄 배경 (pill)
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home_rounded),
-            label: '홈',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.business_outlined),
-            selectedIcon: Icon(Icons.business_rounded),
-            label: '고객사',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.groups_outlined),
-            selectedIcon: Icon(Icons.groups_rounded),
-            label: '프론티어',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard_rounded),
-            label: '대시보드',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.more_horiz_outlined),
-            selectedIcon: Icon(Icons.more_horiz_rounded),
-            label: '더보기',
-          ),
-        ],
       ),
     );
   }
@@ -398,6 +391,7 @@ class CustomerData {
   bool isFavorite;
   String salesStatus;
   String memo;
+  String personInCharge;
 
   CustomerData({
     required this.customerName,
@@ -411,6 +405,7 @@ class CustomerData {
     this.isFavorite = false,
     this.salesStatus = '영업전',
     this.memo = '',
+    this.personInCharge = '',
   });
 
   // [FAV] 고유 키 생성 (고객사명|개통일자|상품명)
@@ -746,8 +741,9 @@ class _CustomerListByHqScreenState extends State<CustomerListByHqScreen> {
     final int productNameIndex = headers.indexWhere((h) => h.contains('상품명'));
     final int sellerIndex = headers.indexWhere((h) => h.contains('실판매자') || h.contains('판매자') || h.contains('MATE'));
     final int buildingIndex = headers.indexWhere((h) => h.contains('건물명') || h.contains('건물'));
+    final int personInChargeIndex = headers.indexWhere((h) => h.contains('담당자'));
 
-    debugPrint('고객사 CSV 인덱스 - 본부:$hqIndex, 지사:$branchIndex, 고객명:$customerNameIndex, 개통일자:$openedAtIndex, 상품유형:$productTypeIndex, 상품명:$productNameIndex, 실판매자:$sellerIndex, 건물명:$buildingIndex');
+    debugPrint('고객사 CSV 인덱스 - 본부:$hqIndex, 지사:$branchIndex, 고객명:$customerNameIndex, 개통일자:$openedAtIndex, 상품유형:$productTypeIndex, 상품명:$productNameIndex, 실판매자:$sellerIndex, 건물명:$buildingIndex, 담당자:$personInChargeIndex');
 
     if (hqIndex == -1 || branchIndex == -1 || customerNameIndex == -1 ||
         openedAtIndex == -1 || productTypeIndex == -1 || productNameIndex == -1 ||
@@ -786,6 +782,7 @@ class _CustomerListByHqScreenState extends State<CustomerListByHqScreen> {
           building: values[buildingIndex],
           salesStatus: '영업전',
           memo: '',
+          personInCharge: personInChargeIndex >= 0 && personInChargeIndex < values.length ? values[personInChargeIndex] : '',
         );
 
         // 저장된 영업상태/메모 로드
@@ -856,7 +853,8 @@ class _CustomerListByHqScreenState extends State<CustomerListByHqScreen> {
           final bool matchesName = customer.customerName.toLowerCase().contains(query);
           final bool matchesSeller = customer.seller.toLowerCase().contains(query);
           final bool matchesHq = customer.hq.toLowerCase().contains(query);
-          if (!matchesName && !matchesSeller && !matchesHq) {
+          final bool matchesPersonInCharge = customer.personInCharge.toLowerCase().contains(query);
+          if (!matchesName && !matchesSeller && !matchesHq && !matchesPersonInCharge) {
             return false;
           }
         }
@@ -1328,8 +1326,9 @@ class _CustomerListScreenState extends State<CustomerListScreen> {
     final int productNameIndex = headers.indexWhere((h) => h.contains('상품명'));
     final int sellerIndex = headers.indexWhere((h) => h.contains('실판매자') || h.contains('판매자') || h.contains('MATE'));
     final int buildingIndex = headers.indexWhere((h) => h.contains('건물명') || h.contains('건물'));
+    final int personInChargeIndex = headers.indexWhere((h) => h.contains('담당자'));
 
-    debugPrint('고객사 CSV 인덱스 - 본부:$hqIndex, 지사:$branchIndex, 고객명:$customerNameIndex, 개통일자:$openedAtIndex, 상품유형:$productTypeIndex, 상품명:$productNameIndex, 실판매자:$sellerIndex, 건물명:$buildingIndex');
+    debugPrint('고객사 CSV 인덱스 - 본부:$hqIndex, 지사:$branchIndex, 고객명:$customerNameIndex, 개통일자:$openedAtIndex, 상품유형:$productTypeIndex, 상품명:$productNameIndex, 실판매자:$sellerIndex, 건물명:$buildingIndex, 담당자:$personInChargeIndex');
 
     if (hqIndex == -1 || branchIndex == -1 || customerNameIndex == -1 ||
         openedAtIndex == -1 || productTypeIndex == -1 || productNameIndex == -1 ||
@@ -1368,6 +1367,7 @@ class _CustomerListScreenState extends State<CustomerListScreen> {
           building: values[buildingIndex],
           salesStatus: '영업전',
           memo: '',
+          personInCharge: personInChargeIndex >= 0 && personInChargeIndex < values.length ? values[personInChargeIndex] : '',
         );
 
         // 저장된 영업상태/메모 로드
@@ -1947,16 +1947,19 @@ class _CustomerCardState extends State<_CustomerCard> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                // [FAV] 둘째줄: 개통일자(좌) + 본부 칩(우) - 본부 위치 조정
+                // [FAV] 둘째줄: 개통일자(좌) + 담당자 + 본부 칩(우)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Text(
-                      '개통일자: ${widget.customer.openedAt}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
+                    Expanded(
+                      child: Text(
+                        '개통일자: ${widget.customer.openedAt}  ${widget.customer.personInCharge.isEmpty ? "담당자 없음" : widget.customer.personInCharge}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     Container(
@@ -2195,6 +2198,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
         items: [
                 _InfoRow(label: '고객명', value: widget.customer.customerName),
                 _InfoRow(label: '개통일자', value: widget.customer.openedAt),
+                _InfoRow(label: '담당자', value: widget.customer.personInCharge.isEmpty ? '담당자 없음' : widget.customer.personInCharge),
                 _InfoRow(label: '상품유형', value: widget.customer.productType),
           _InfoRow(label: '상품명', value: widget.customer.productName),
                 if (widget.customer.building.isNotEmpty)
@@ -2596,13 +2600,30 @@ class _FrontierHqSelectionScreenState extends State<FrontierHqSelectionScreen> {
   String? _selectedHq;
   List<FrontierData> _allFrontiers = [];
   List<FrontierData> _filteredFrontiers = [];
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
   bool _isLoading = true;
   String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(_onSearchChanged);
     _loadCsvData();
+  }
+
+  void _onSearchChanged() {
+    final q = _searchController.text.trim();
+    if (q == _searchQuery) return;
+    setState(() => _searchQuery = q);
+    _applyFilters();
+  }
+
+  @override
+  void dispose() {
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    super.dispose();
   }
 
   // CSV 파일들 로드
@@ -2691,6 +2712,12 @@ class _FrontierHqSelectionScreenState extends State<FrontierHqSelectionScreen> {
   void _applyFilters() {
     List<FrontierData> filtered = List.from(_allFrontiers);
     
+    // 이름 검색
+    final q = _searchQuery.toLowerCase();
+    if (q.isNotEmpty) {
+      filtered = filtered.where((f) => f.name.toLowerCase().contains(q)).toList();
+    }
+
     // 본부 필터
     if (_selectedHq != null && _selectedHq != '전체') {
       filtered = filtered.where((f) => f.hq == _selectedHq).toList();
@@ -2708,12 +2735,7 @@ class _FrontierHqSelectionScreenState extends State<FrontierHqSelectionScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
-        leading: IconButton(
-          icon: const Icon(Icons.menu, color: Color(0xFF1A1A1A)),
-          onPressed: () {
-            // 햄버거 메뉴 (필요시 구현)
-          },
-        ),
+        automaticallyImplyLeading: false,
         title: Padding(
           padding: const EdgeInsets.all(8.0),
           child: Image.asset(
@@ -2727,6 +2749,33 @@ class _FrontierHqSelectionScreenState extends State<FrontierHqSelectionScreen> {
       ),
       body: Column(
         children: [
+          // 이름 검색
+          Container(
+            padding: const EdgeInsets.all(16),
+            color: Colors.white,
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: '이름 검색',
+                prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey[300]!),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey[300]!),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFFF6F61), width: 2),
+                ),
+                filled: true,
+                fillColor: Colors.grey[50],
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              ),
+            ),
+          ),
           // 본부 필터 Chips
           Container(
             height: 56,
@@ -6252,7 +6301,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _loadKpiData();
     _setupCsvReloadListener();
   }
@@ -6736,15 +6785,6 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     );
   }
 
-  String _getYearMonthSummary() {
-    if (_selectedYearMonths.length == _availableYearMonths.length) {
-      return '전체';
-    } else if (_selectedYearMonths.isEmpty) {
-      return '선택 없음';
-    } else {
-      return '선택 ${_selectedYearMonths.length}개';
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -6753,12 +6793,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
-        leading: IconButton(
-          icon: const Icon(Icons.menu, color: Color(0xFF1A1A1A)),
-          onPressed: () {
-            // 햄버거 메뉴 (필요시 구현)
-          },
-        ),
+        automaticallyImplyLeading: false,
         title: Padding(
           padding: const EdgeInsets.all(8.0),
           child: Image.asset(
@@ -6773,43 +6808,16 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
       body: SafeArea(
         child: Column(
           children: [
-            // 본부 필터 Chips
+            // [DASH] 메인 탭 3개: 전체현황 / 본부별 / 프론티어센터별
             Container(
-              height: 56,
-              padding: const EdgeInsets.symmetric(vertical: 8),
               color: Colors.white,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: _hqFilterList.length,
-                itemBuilder: (context, index) {
-                  final hq = _hqFilterList[index];
-                  final isSelected = (hq == '전체' && _selectedHqFilter == null) || _selectedHqFilter == hq;
-                  
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: FilterChip(
-                      label: Text(hq),
-                      selected: isSelected,
-                      onSelected: (selected) {
-                        setState(() {
-                          _selectedHqFilter = hq == '전체' ? null : hq;
-                        });
-                        _applyHqFilter();
-                      },
-                      selectedColor: const Color(0xFFFF6F61).withOpacity(0.2),
-                      checkmarkColor: const Color(0xFFFF6F61),
-                      labelStyle: TextStyle(
-                        color: isSelected ? const Color(0xFFFF6F61) : Colors.grey[700],
-                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                      ),
-                      side: BorderSide(
-                        color: isSelected ? const Color(0xFFFF6F61) : Colors.grey[300]!,
-                        width: isSelected ? 1.5 : 1,
-                      ),
-                    ),
-                  );
-                },
+              child: TabBar(
+                controller: _tabController,
+                tabs: const [
+                  Tab(text: '전체현황'),
+                  Tab(text: '본부별'),
+                  Tab(text: '프론티어센터별'),
+                ],
               ),
             ),
             Expanded(
@@ -6819,17 +6827,17 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                       ? Center(
                           child: Padding(
                             padding: const EdgeInsets.all(20),
-                child: Column(
+                            child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
+                              children: [
                                 Icon(Icons.error_outline, size: 48, color: Colors.red[300]),
                                 const SizedBox(height: 16),
                                 Text(
                                   _errorMessage!,
                                   textAlign: TextAlign.center,
                                   style: TextStyle(color: Colors.red[700], fontSize: 16),
-                    ),
-                    const SizedBox(height: 16),
+                                ),
+                                const SizedBox(height: 16),
                                 ElevatedButton(
                                   onPressed: _loadKpiData,
                                   child: const Text('다시 시도'),
@@ -6838,62 +6846,132 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                             ),
                           ),
                         )
-                      : SingleChildScrollView(
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // [DASH] 연월 멀티 선택 UI
-                              _YearMonthFilterCard(
-                                summary: _getYearMonthSummary(),
-                                onTap: _showYearMonthSelector,
-                    ),
-                    const SizedBox(height: 16),
-                              // [DASH] 전체현황 KPI 집계
-                              Row(
-                                children: [
-                                  const Text(
-                                    '전체현황',
-                                    style: TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                      color: Color(0xFF1A1A1A),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    '선택 연월 기준',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey[600],
-                                    ),
-                    ),
-                  ],
-                ),
-                              const SizedBox(height: 12),
-                              _OverallKpiGrid(kpi: _overallKpi),
-                              const SizedBox(height: 24),
-                              // [DASH] 본부/센터 카드 리스트
-                              TabBar(
-                                controller: _tabController,
-                                tabs: const [
-                                  Tab(text: '본부별'),
-                                  Tab(text: '프론티어센터별'),
-                                ],
-                              ),
-                              SizedBox(
-                                height: 400,
-                                child: TabBarView(
-                                  controller: _tabController,
+                      : TabBarView(
+                          controller: _tabController,
+                          children: [
+                            // 전체현황
+                            ListView(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                              children: [
+                                YearMonthPickerCard(
+                                  selectedYearMonths: _selectedYearMonths,
+                                  availableYearMonths: _availableYearMonths,
+                                  onTap: _showYearMonthSelector,
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
                                   children: [
-                                    _HqListTab(hqList: _filteredHqList, allData: _allKpiData, selectedYearMonths: _selectedYearMonths),
-                                    _CenterListTab(centerList: _filteredCenterList, allData: _allKpiData, selectedYearMonths: _selectedYearMonths),
+                                    const Text(
+                                      '전체현황',
+                                      style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF1A1A1A),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      '선택 연월 기준',
+                                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                                    ),
                                   ],
                                 ),
-                              ),
-                            ],
-                          ),
-              ),
+                                const SizedBox(height: 12),
+                                _OverallKpiGrid(kpi: _overallKpi),
+                                const SizedBox(height: 24),
+                              ],
+                            ),
+
+                            // 본부별
+                            Column(
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                                  child: YearMonthPickerCard(
+                                    selectedYearMonths: _selectedYearMonths,
+                                    availableYearMonths: _availableYearMonths,
+                                    onTap: _showYearMonthSelector,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Container(
+                                  height: 56,
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  color: Colors.white,
+                                  child: ListView.builder(
+                                    scrollDirection: Axis.horizontal,
+                                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                                    itemCount: _hqFilterList.length,
+                                    itemBuilder: (context, index) {
+                                      final hq = _hqFilterList[index];
+                                      final isSelected =
+                                          (hq == '전체' && _selectedHqFilter == null) || _selectedHqFilter == hq;
+
+                                      return Padding(
+                                        padding: const EdgeInsets.only(right: 8),
+                                        child: FilterChip(
+                                          label: Text(hq),
+                                          selected: isSelected,
+                                          onSelected: (selected) {
+                                            setState(() {
+                                              _selectedHqFilter = hq == '전체' ? null : hq;
+                                            });
+                                            _applyHqFilter();
+                                          },
+                                          selectedColor: const Color(0xFFFF6F61).withOpacity(0.2),
+                                          checkmarkColor: const Color(0xFFFF6F61),
+                                          labelStyle: TextStyle(
+                                            color: isSelected ? const Color(0xFFFF6F61) : Colors.grey[700],
+                                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                                          ),
+                                          side: BorderSide(
+                                            color: isSelected ? const Color(0xFFFF6F61) : Colors.grey[300]!,
+                                            width: isSelected ? 1.5 : 1,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                                    child: _HqListTab(
+                                      hqList: _filteredHqList,
+                                      allData: _allKpiData,
+                                      selectedYearMonths: _selectedYearMonths,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            // 프론티어센터별
+                            Column(
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                                  child: YearMonthPickerCard(
+                                    selectedYearMonths: _selectedYearMonths,
+                                    availableYearMonths: _availableYearMonths,
+                                    onTap: _showYearMonthSelector,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Expanded(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                                    child: _CenterListTab(
+                                      centerList: _filteredCenterList,
+                                      allData: _allKpiData,
+                                      selectedYearMonths: _selectedYearMonths,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
             ),
           ],
         ),
@@ -6902,27 +6980,65 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   }
 }
 
-// [DASH] 연월 멀티 선택 UI
-class _YearMonthFilterCard extends StatelessWidget {
-  final String summary;
+// [DASH] 연월 멀티 선택 UI - 리디자인된 세련된 카드
+class YearMonthPickerCard extends StatelessWidget {
+  final Set<String> selectedYearMonths;
+  final Set<String> availableYearMonths;
   final VoidCallback onTap;
 
-  const _YearMonthFilterCard({
-    required this.summary,
+  const YearMonthPickerCard({
+    super.key,
+    required this.selectedYearMonths,
+    required this.availableYearMonths,
     required this.onTap,
   });
 
+  String _getSummary() {
+    if (selectedYearMonths.length == availableYearMonths.length) {
+      return '전체';
+    } else if (selectedYearMonths.isEmpty) {
+      return '선택 없음';
+    } else {
+      return '선택 ${selectedYearMonths.length}개';
+    }
+  }
+
+  String? _getFirstYearMonth() {
+    if (selectedYearMonths.isEmpty) return null;
+    final sorted = selectedYearMonths.toList()..sort();
+    return sorted.first;
+  }
+
+  bool get _hasSelection => selectedYearMonths.isNotEmpty && selectedYearMonths.length != availableYearMonths.length;
+
   @override
   Widget build(BuildContext context) {
+    final summary = _getSummary();
+    final firstYearMonth = _getFirstYearMonth();
+    final hasSelection = _hasSelection;
+
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        gradient: hasSelection
+            ? const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFFFFE8E6), Color(0xFFFFFFFF)],
+              )
+            : null,
+        color: hasSelection ? null : Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: hasSelection
+            ? null
+            : Border.all(
+                color: const Color(0xFFE5E7EB),
+                width: 1,
+              ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 18,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -6930,34 +7046,82 @@ class _YearMonthFilterCard extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
-      child: Padding(
+          borderRadius: BorderRadius.circular(22),
+          child: Padding(
             padding: const EdgeInsets.all(16),
-        child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '연월 선택',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1A1A1A),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      summary,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ],
+            child: Row(
+              children: [
+                // 좌측: 아이콘 + 텍스트
+                Icon(
+                  Icons.calendar_today,
+                  size: 20,
+                  color: hasSelection ? const Color(0xFFFF6B63) : const Color(0xFFFF6B63).withOpacity(0.7),
                 ),
-                const Icon(Icons.chevron_right, color: Color(0xFFFF6F61)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        '연월 선택',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        summary,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: hasSelection ? Colors.grey[700] : Colors.grey[600],
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                // 우측: pill badge + chevron 버튼
+                if (hasSelection && firstYearMonth != null) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF6B63),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      selectedYearMonths.length == 1
+                          ? firstYearMonth
+                          : '$firstYearMonth 외 ${selectedYearMonths.length - 1}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: hasSelection ? const Color(0xFFFFE8E6) : Colors.transparent,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.chevron_right,
+                    size: 20,
+                    color: hasSelection ? const Color(0xFFFF6B63) : Colors.grey[400],
+                  ),
+                ),
               ],
             ),
           ),
@@ -6966,6 +7130,7 @@ class _YearMonthFilterCard extends StatelessWidget {
     );
   }
 }
+
 
 // [DASH] 전체현황 KPI 집계 - 2x2 그리드
 class _OverallKpiGrid extends StatelessWidget {
@@ -6989,7 +7154,8 @@ class _OverallKpiGrid extends StatelessWidget {
         crossAxisCount: 2,
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
-        childAspectRatio: 2.4, // 높이 절반으로 줄임 (1.2 -> 2.4)
+        // [FIX] KPI 카드 높이 확보 + BOTTOM OVERFLOW 방지
+        childAspectRatio: 2.2,
       ),
       itemCount: 4,
       itemBuilder: (context, index) {
@@ -7007,8 +7173,9 @@ class _OverallKpiGrid extends StatelessWidget {
             ],
           ),
           child: Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
@@ -7017,14 +7184,21 @@ class _OverallKpiGrid extends StatelessWidget {
                     fontSize: 12,
                     color: Colors.grey[600],
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  _formatNumber(item['value'] as int),
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: item['color'] as Color,
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    _formatNumber(item['value'] as int),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: item['color'] as Color,
+                    ),
                   ),
                 ),
               ],
@@ -8032,6 +8206,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     final int productNameIndex = headers.indexWhere((h) => h.contains('상품명'));
     final int sellerIndex = headers.indexWhere((h) => h.contains('실판매자') || h.contains('판매자') || h.contains('MATE'));
     final int buildingIndex = headers.indexWhere((h) => h.contains('건물명') || h.contains('건물'));
+    final int personInChargeIndex = headers.indexWhere((h) => h.contains('담당자'));
 
     if (hqIndex == -1 || branchIndex == -1 || customerNameIndex == -1 ||
         openedAtIndex == -1 || productTypeIndex == -1 || productNameIndex == -1 ||
@@ -8061,6 +8236,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           building: values[buildingIndex],
           salesStatus: '영업전',
           memo: '',
+          personInCharge: personInChargeIndex >= 0 && personInChargeIndex < values.length ? values[personInChargeIndex] : '',
         );
 
         final String? savedStatus = prefs.getString('${customer.customerKey}_status');
@@ -8089,12 +8265,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
-        leading: IconButton(
-          icon: const Icon(Icons.menu, color: Color(0xFF1A1A1A)),
-          onPressed: () {
-            // 햄버거 메뉴 (필요시 구현)
-          },
-        ),
+        automaticallyImplyLeading: false,
         title: Padding(
           padding: const EdgeInsets.all(8.0),
           child: Image.asset(
@@ -8715,7 +8886,6 @@ class _MoreScreenState extends State<MoreScreen> {
                   children: [
                     _MoreCardButton(
                       title: '즐겨찾기',
-                      subtitle: '즐겨찾기한 고객사를 확인합니다',
                       icon: Icons.star,
                       onTap: () {
                         Navigator.of(context).push(
@@ -8735,7 +8905,6 @@ class _MoreScreenState extends State<MoreScreen> {
                     const SizedBox(height: 16),
                     _MoreCardButton(
                       title: 'OD',
-                      subtitle: 'OD 페이지를 엽니다',
                       icon: Icons.language,
                       onTap: () async {
                         const odUrl = 'https://kimyoung-gi.github.io/11/';
@@ -8764,45 +8933,11 @@ class _MoreScreenState extends State<MoreScreen> {
                         }
                       },
                     ),
-                    const SizedBox(height: 16),
-                    _MoreCardButton(
-                      title: '설정',
-                      subtitle: '앱 설정을 변경합니다',
-                      icon: Icons.settings,
-                      onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('설정 기능')),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    _MoreCardButton(
-                      title: '도움말',
-                      subtitle: '앱 사용 방법을 확인합니다',
-                      icon: Icons.help_outline,
-                      onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('도움말 기능')),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    _MoreCardButton(
-                      title: '정보',
-                      subtitle: '앱 정보 및 버전을 확인합니다',
-                      icon: Icons.info_outline,
-                      onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('정보 기능')),
-                        );
-                      },
-                    ),
                     // 관리자 페이지 이동 버튼 (Admin만 표시)
                     if (authService.isAdmin) ...[
                       const SizedBox(height: 24),
                       _MoreCardButton(
                         title: '관리자 페이지',
-                        subtitle: '관리자 대시보드로 이동합니다',
                         icon: Icons.admin_panel_settings,
                         onTap: () {
                           context.go('/admin');
@@ -8813,7 +8948,6 @@ class _MoreScreenState extends State<MoreScreen> {
                     // 로그아웃 버튼
                     _MoreCardButton(
                       title: '로그아웃',
-                      subtitle: '로그아웃하고 로그인 화면으로 돌아갑니다',
                       icon: Icons.logout,
                       onTap: () async {
                         final confirm = await showDialog<bool>(
@@ -8839,7 +8973,7 @@ class _MoreScreenState extends State<MoreScreen> {
                         if (confirm == true && context.mounted) {
                           await authService.logout();
                           if (context.mounted) {
-                            context.go('/');
+                            context.go('/login');
                           }
                         }
                       },
@@ -8859,14 +8993,12 @@ class _MoreScreenState extends State<MoreScreen> {
 // 더보기 카드 버튼 위젯
 class _MoreCardButton extends StatelessWidget {
   final String title;
-  final String subtitle;
   final IconData icon;
   final VoidCallback onTap;
   final bool isDestructive;
 
   const _MoreCardButton({
     required this.title,
-    required this.subtitle,
     required this.icon,
     required this.onTap,
     this.isDestructive = false,
@@ -8892,52 +9024,40 @@ class _MoreCardButton extends StatelessWidget {
             ],
           ),
           child: Padding(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
               children: [
                 // 아이콘
                 Container(
-                  width: 56,
-                  height: 56,
+                  width: 40,
+                  height: 40,
                   decoration: BoxDecoration(
                     color: const Color(0xFFFF6F61).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
                     icon,
                     color: const Color(0xFFFF6F61),
-                    size: 28,
+                    size: 22,
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 12),
                 // 텍스트
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: isDestructive ? Colors.red : const Color(0xFF1A1A1A),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: isDestructive ? Colors.red : const Color(0xFF1A1A1A),
+                    ),
                   ),
                 ),
                 // 화살표
                 Icon(
                   Icons.chevron_right,
                   color: Colors.grey[400],
+                  size: 20,
                 ),
               ],
             ),

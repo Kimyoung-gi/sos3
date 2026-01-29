@@ -23,6 +23,7 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
   final TextEditingController _sellerController = TextEditingController();
   final TextEditingController _buildingController = TextEditingController();
   final TextEditingController _memoController = TextEditingController();
+  final TextEditingController _personInChargeController = TextEditingController();
   
   // 선택값
   String? _selectedProductType;
@@ -55,6 +56,7 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
     _sellerController.dispose();
     _buildingController.dispose();
     _memoController.dispose();
+    _personInChargeController.dispose();
     super.dispose();
   }
   
@@ -145,6 +147,7 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
         salesStatus: _selectedSalesStatus!,
         memo: _memoController.text.trim(),
         isFavorite: false,
+        personInCharge: _personInChargeController.text.trim(),
       );
       
       // 중복 체크
@@ -240,19 +243,19 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF1A1A1A)),
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
           '고객사 등록',
           style: TextStyle(
             fontSize: 18,
-            color: Color(0xFF1A1A1A),
+            color: Colors.black,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -288,6 +291,16 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
                     readOnly: true,
                     onTap: _selectDate,
                     validator: (value) => value?.trim().isEmpty ?? true ? '개통일자를 선택하세요' : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _personInChargeController,
+                    decoration: const InputDecoration(
+                      labelText: '담당자',
+                      hintText: '담당자 이름',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (_) => setState(() {}),
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
