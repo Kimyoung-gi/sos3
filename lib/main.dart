@@ -144,25 +144,35 @@ Future<String?> _loadCsvFile(String fileName) async {
 // ========================================
 GoRouter createRouter(AuthService authService) {
   return GoRouter(
-    initialLocation: '/',
+    initialLocation: '/login',
     redirect: (context, state) {
       final isLoggedIn = authService.isLoggedIn;
       final isAdmin = authService.isAdmin;
       final path = state.uri.path;
       
-      // 로그인 페이지는 로그인 안 된 경우만
-      if (path == '/' || path == '/admin-login') {
+      // 루트(/)는 로그인 페이지(/login)로 보낸다.
+      // (웹에서 첫 진입이 / 인 경우가 많아서, /login을 표준 경로로 사용)
+      if (path == '/') {
         if (isLoggedIn) {
-          // Admin은 관리자 페이지로, 일반 사용자는 홈으로
-          // (Admin은 나중에 일반 페이지로도 이동 가능)
-          return isAdmin ? '/admin' : '/main/0'; // 홈 탭(index 0)
+          return isAdmin ? '/admin' : '/main/0';
         }
+        return '/login';
+      }
+
+      // 일반 로그인(/login): 로그인 성공 시 항상 메인 페이지로 (ADMIN 권한이어도 메인으로)
+      if (path == '/login') {
+        if (isLoggedIn) return '/main/0';
+        return null;
+      }
+      // 관리자 로그인(/admin-login): 로그인 성공 시 ADMIN이면 관리자 페이지, 아니면 메인
+      if (path == '/admin-login') {
+        if (isLoggedIn) return isAdmin ? '/admin' : '/main/0';
         return null;
       }
       
       // 보호된 경로: 로그인 필요
       if (path.startsWith('/main') || path.startsWith('/admin')) {
-        if (!isLoggedIn) return '/';
+        if (!isLoggedIn) return '/login';
         // Admin은 /admin과 /main 모두 접근 가능
         // 일반 사용자는 /main만 접근 가능
         if (path.startsWith('/admin') && !isAdmin) return '/main';
@@ -187,6 +197,10 @@ GoRouter createRouter(AuthService authService) {
         routes: [
           GoRoute(
             path: '/',
+            builder: (context, state) => const LoginPage(),
+          ),
+          GoRoute(
+            path: '/login',
             builder: (context, state) => const LoginPage(),
           ),
           GoRoute(
@@ -379,6 +393,7 @@ class CustomerData {
   bool isFavorite;
   String salesStatus;
   String memo;
+  String personInCharge;
 
   CustomerData({
     required this.customerName,
@@ -392,6 +407,7 @@ class CustomerData {
     this.isFavorite = false,
     this.salesStatus = '영업전',
     this.memo = '',
+    this.personInCharge = '',
   });
 
   // [FAV] 고유 키 생성 (고객사명|개통일자|상품명)
@@ -727,8 +743,9 @@ class _CustomerListByHqScreenState extends State<CustomerListByHqScreen> {
     final int productNameIndex = headers.indexWhere((h) => h.contains('상품명'));
     final int sellerIndex = headers.indexWhere((h) => h.contains('실판매자') || h.contains('판매자') || h.contains('MATE'));
     final int buildingIndex = headers.indexWhere((h) => h.contains('건물명') || h.contains('건물'));
+    final int personInChargeIndex = headers.indexWhere((h) => h.contains('담당자'));
 
-    debugPrint('고객사 CSV 인덱스 - 본부:$hqIndex, 지사:$branchIndex, 고객명:$customerNameIndex, 개통일자:$openedAtIndex, 상품유형:$productTypeIndex, 상품명:$productNameIndex, 실판매자:$sellerIndex, 건물명:$buildingIndex');
+    debugPrint('고객사 CSV 인덱스 - 본부:$hqIndex, 지사:$branchIndex, 고객명:$customerNameIndex, 개통일자:$openedAtIndex, 상품유형:$productTypeIndex, 상품명:$productNameIndex, 실판매자:$sellerIndex, 건물명:$buildingIndex, 담당자:$personInChargeIndex');
 
     if (hqIndex == -1 || branchIndex == -1 || customerNameIndex == -1 ||
         openedAtIndex == -1 || productTypeIndex == -1 || productNameIndex == -1 ||
@@ -767,6 +784,7 @@ class _CustomerListByHqScreenState extends State<CustomerListByHqScreen> {
           building: values[buildingIndex],
           salesStatus: '영업전',
           memo: '',
+          personInCharge: personInChargeIndex >= 0 && personInChargeIndex < values.length ? values[personInChargeIndex] : '',
         );
 
         // 저장된 영업상태/메모 로드
@@ -837,7 +855,8 @@ class _CustomerListByHqScreenState extends State<CustomerListByHqScreen> {
           final bool matchesName = customer.customerName.toLowerCase().contains(query);
           final bool matchesSeller = customer.seller.toLowerCase().contains(query);
           final bool matchesHq = customer.hq.toLowerCase().contains(query);
-          if (!matchesName && !matchesSeller && !matchesHq) {
+          final bool matchesPersonInCharge = customer.personInCharge.toLowerCase().contains(query);
+          if (!matchesName && !matchesSeller && !matchesHq && !matchesPersonInCharge) {
             return false;
           }
         }
@@ -1309,8 +1328,9 @@ class _CustomerListScreenState extends State<CustomerListScreen> {
     final int productNameIndex = headers.indexWhere((h) => h.contains('상품명'));
     final int sellerIndex = headers.indexWhere((h) => h.contains('실판매자') || h.contains('판매자') || h.contains('MATE'));
     final int buildingIndex = headers.indexWhere((h) => h.contains('건물명') || h.contains('건물'));
+    final int personInChargeIndex = headers.indexWhere((h) => h.contains('담당자'));
 
-    debugPrint('고객사 CSV 인덱스 - 본부:$hqIndex, 지사:$branchIndex, 고객명:$customerNameIndex, 개통일자:$openedAtIndex, 상품유형:$productTypeIndex, 상품명:$productNameIndex, 실판매자:$sellerIndex, 건물명:$buildingIndex');
+    debugPrint('고객사 CSV 인덱스 - 본부:$hqIndex, 지사:$branchIndex, 고객명:$customerNameIndex, 개통일자:$openedAtIndex, 상품유형:$productTypeIndex, 상품명:$productNameIndex, 실판매자:$sellerIndex, 건물명:$buildingIndex, 담당자:$personInChargeIndex');
 
     if (hqIndex == -1 || branchIndex == -1 || customerNameIndex == -1 ||
         openedAtIndex == -1 || productTypeIndex == -1 || productNameIndex == -1 ||
@@ -1349,6 +1369,7 @@ class _CustomerListScreenState extends State<CustomerListScreen> {
           building: values[buildingIndex],
           salesStatus: '영업전',
           memo: '',
+          personInCharge: personInChargeIndex >= 0 && personInChargeIndex < values.length ? values[personInChargeIndex] : '',
         );
 
         // 저장된 영업상태/메모 로드
@@ -1928,16 +1949,19 @@ class _CustomerCardState extends State<_CustomerCard> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                // [FAV] 둘째줄: 개통일자(좌) + 본부 칩(우) - 본부 위치 조정
+                // [FAV] 둘째줄: 개통일자(좌) + 담당자 + 본부 칩(우)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Text(
-                      '개통일자: ${widget.customer.openedAt}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
+                    Expanded(
+                      child: Text(
+                        '개통일자: ${widget.customer.openedAt}  ${widget.customer.personInCharge.isEmpty ? "담당자 없음" : widget.customer.personInCharge}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     Container(
@@ -2176,6 +2200,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
         items: [
                 _InfoRow(label: '고객명', value: widget.customer.customerName),
                 _InfoRow(label: '개통일자', value: widget.customer.openedAt),
+                _InfoRow(label: '담당자', value: widget.customer.personInCharge.isEmpty ? '담당자 없음' : widget.customer.personInCharge),
                 _InfoRow(label: '상품유형', value: widget.customer.productType),
           _InfoRow(label: '상품명', value: widget.customer.productName),
                 if (widget.customer.building.isNotEmpty)
@@ -8183,6 +8208,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     final int productNameIndex = headers.indexWhere((h) => h.contains('상품명'));
     final int sellerIndex = headers.indexWhere((h) => h.contains('실판매자') || h.contains('판매자') || h.contains('MATE'));
     final int buildingIndex = headers.indexWhere((h) => h.contains('건물명') || h.contains('건물'));
+    final int personInChargeIndex = headers.indexWhere((h) => h.contains('담당자'));
 
     if (hqIndex == -1 || branchIndex == -1 || customerNameIndex == -1 ||
         openedAtIndex == -1 || productTypeIndex == -1 || productNameIndex == -1 ||
@@ -8212,6 +8238,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           building: values[buildingIndex],
           salesStatus: '영업전',
           memo: '',
+          personInCharge: personInChargeIndex >= 0 && personInChargeIndex < values.length ? values[personInChargeIndex] : '',
         );
 
         final String? savedStatus = prefs.getString('${customer.customerKey}_status');
@@ -8948,7 +8975,7 @@ class _MoreScreenState extends State<MoreScreen> {
                         if (confirm == true && context.mounted) {
                           await authService.logout();
                           if (context.mounted) {
-                            context.go('/');
+                            context.go('/login');
                           }
                         }
                       },

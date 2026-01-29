@@ -12,6 +12,7 @@ class Customer {
   final String salesStatus;
   final String memo;
   final bool isFavorite;
+  final String personInCharge;
 
   const Customer({
     required this.customerName,
@@ -25,6 +26,7 @@ class Customer {
     this.salesStatus = '영업전',
     this.memo = '',
     this.isFavorite = false,
+    this.personInCharge = '',
   });
 
   String get customerKey => '$customerName|$openDate|$productName';
@@ -41,6 +43,7 @@ class Customer {
         'salesStatus': salesStatus,
         'memo': memo,
         'isFavorite': isFavorite,
+        'personInCharge': personInCharge,
       };
 
   factory Customer.fromJson(Map<String, dynamic> j) => Customer(
@@ -55,6 +58,7 @@ class Customer {
         salesStatus: j['salesStatus'] as String? ?? '영업전',
         memo: j['memo'] as String? ?? '',
         isFavorite: j['isFavorite'] as bool? ?? false,
+        personInCharge: j['personInCharge'] as String? ?? '',
       );
 
   Customer copyWith({
@@ -69,6 +73,7 @@ class Customer {
     String? salesStatus,
     String? memo,
     bool? isFavorite,
+    String? personInCharge,
   }) =>
       Customer(
         customerName: customerName ?? this.customerName,
@@ -82,5 +87,6 @@ class Customer {
         salesStatus: salesStatus ?? this.salesStatus,
         memo: memo ?? this.memo,
         isFavorite: isFavorite ?? this.isFavorite,
+        personInCharge: personInCharge ?? this.personInCharge,
       );
 }

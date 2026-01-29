@@ -103,7 +103,7 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
             tooltip: '로그아웃',
             onPressed: () async {
               await auth.logout();
-              if (mounted) context.go('/');
+              if (mounted) context.go('/login');
             },
           ),
         ],

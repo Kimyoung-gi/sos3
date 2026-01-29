@@ -20,22 +20,11 @@ class AuthService extends ChangeNotifier {
   bool get isAdmin => _currentUser?.isAdmin ?? false;
   bool get initialized => _initialized;
 
-  /// 앱 시작 시 세션 복원
+  /// 앱 시작 시 세션 복원하지 않음 — 접속은 항상 로그인 페이지를 통해 입력 후 진입
   Future<void> init() async {
     if (_initialized) return;
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString('auth_session');
-      if (raw != null && raw.isNotEmpty) {
-        final map = jsonDecode(raw) as Map<String, dynamic>?;
-        if (map != null) {
-          final u = User.fromJson(map);
-          if (u.isActive) _currentUser = u;
-        }
-      }
-    } catch (e) {
-      debugPrint('AuthService.init: $e');
-    }
+    // 세션 자동 복원 비활성화: 매번 로그인 화면에서 아이디/비밀번호 입력 후 접속
+    _currentUser = null;
     _initialized = true;
     notifyListeners();
   }

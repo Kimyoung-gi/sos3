@@ -80,6 +80,7 @@ class CsvParserExtended {
     final snIdx = idx(['실판매자', '판매자', 'sellername', 'mate']);
     final buildIdx = idx(['건물명', '건물', 'building']);
     final ssIdx = idx(['영업상태', 'salesstatus']);
+    final picIdx = idx(['담당자', 'personincharge']);
 
     if (cnIdx < 0 || odIdx < 0 || (ptIdx < 0 && pnIdx < 0)) {
       result.add(CsvRowExtended<Customer>(
@@ -112,6 +113,7 @@ class CsvParserExtended {
       final branch = v(branchIdx);
       final sellerName = v(snIdx);
       final building = v(buildIdx);
+      final personInCharge = v(picIdx);
       String salesStatus = v(ssIdx).trim();
       if (salesStatus.isEmpty) salesStatus = '영업전';
 
@@ -145,6 +147,7 @@ class CsvParserExtended {
           sellerName: sellerName,
           building: building,
           salesStatus: salesStatus,
+          personInCharge: personInCharge,
         ),
         lineIndex: i + 1,
         rawRow: {for (int j = 0; j < rawHeaders.length && j < vals.length; j++) rawHeaders[j]: vals[j]},

@@ -62,6 +62,7 @@ class CsvParser {
       'sellerName': idx(['실판매자', '판매자', 'mate']),
       'building': idx(['건물명', '건물']),
       'salesStatus': idx(['영업상태', 'salesstatus']),
+      'personInCharge': idx(['담당자', 'personincharge']),
     };
   }
 
@@ -93,6 +94,7 @@ class CsvParser {
     final snIdx = hi['sellerName'] ?? -1;
     final buildIdx = hi['building'] ?? -1;
     final ssIdx = hi['salesStatus'] ?? -1;
+    final picIdx = hi['personInCharge'] ?? -1;
 
     final requiredOk = hqIdx >= 0 && branchIdx >= 0 && cnIdx >= 0 && odIdx >= 0 && (ptIdx >= 0 || pnIdx >= 0);
     if (!requiredOk) {
@@ -120,6 +122,7 @@ class CsvParser {
       final branch = v(branchIdx);
       final sellerName = v(snIdx);
       final building = buildIdx >= 0 && buildIdx < vals.length ? v(buildIdx) : '';
+      final personInCharge = picIdx >= 0 && picIdx < vals.length ? v(picIdx) : '';
       String salesStatus = ssIdx >= 0 ? v(ssIdx).trim() : _defaultStatus;
       if (salesStatus.isEmpty) salesStatus = _defaultStatus;
 
@@ -149,6 +152,7 @@ class CsvParser {
           sellerName: sellerName,
           building: building,
           salesStatus: salesStatus,
+          personInCharge: personInCharge,
         ),
         lineIndex: i + 1,
       ));
