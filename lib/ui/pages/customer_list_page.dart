@@ -11,7 +11,6 @@ import '../../services/csv_service.dart';
 import '../../services/csv_reload_bus.dart';
 import '../../utils/csv_parser_extended.dart';
 import '../widgets/customer_card.dart';
-import 'customer_register_page.dart';
 
 /// 고객사 리스트 페이지 (전면 개편)
 class CustomerListPage extends StatefulWidget {
@@ -271,20 +270,6 @@ class _CustomerListPageState extends State<CustomerListPage> {
     });
   }
 
-  /// 고객사 등록 페이지로 이동
-  Future<void> _navigateToRegister() async {
-    final result = await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => const CustomerRegisterPage(),
-      ),
-    );
-    
-    // 등록 완료 시 리스트 리로드
-    if (result != null || mounted) {
-      _loadCustomers();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -303,21 +288,7 @@ class _CustomerListPageState extends State<CustomerListPage> {
           ),
         ),
         centerTitle: true,
-        actions: [
-          TextButton.icon(
-            onPressed: _navigateToRegister,
-            icon: const Icon(Icons.add, color: Color(0xFFFF6F61), size: 20),
-            label: const Text(
-              '고객사 등록',
-              style: TextStyle(
-                color: Color(0xFFFF6F61),
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-        ],
+        actions: const [],
       ),
       body: Column(
         children: [

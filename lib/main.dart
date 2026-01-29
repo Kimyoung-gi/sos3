@@ -25,6 +25,7 @@ import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'dart:async';
+import 'dart:convert';
 // [WEB] iframe을 위한 import
 import 'package:universal_html/html.dart' as html;
 import 'dart:ui_web' show platformViewRegistry;
@@ -379,6 +380,28 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           context.go('/main/$index');
         },
       ),
+      floatingActionButton: _currentIndex == 1
+          ? Transform.scale(
+              scale: 0.85,
+              child: FloatingActionButton.extended(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const CustomerRegisterPage(),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text(
+                  '고객사 등록',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+                backgroundColor: const Color(0xFFFF6F61),
+                foregroundColor: Colors.white,
+              ),
+            )
+          : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
     );
   }
 }
@@ -417,6 +440,53 @@ class CustomerData {
 
   // [FAV] 고유 키 생성 (고객사명|개통일자|상품명)
   String get customerKey => '$customerName|$openedAt|$productName';
+}
+
+// ========================================
+// 영업활동 로그 항목 (영업현황 섹션 전용)
+// ========================================
+class SalesActivityItem {
+  final String id;
+  final String text;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+
+  SalesActivityItem({
+    required this.id,
+    required this.text,
+    required this.createdAt,
+    this.updatedAt,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'text': text,
+        'createdAt': createdAt.toIso8601String(),
+        'updatedAt': updatedAt?.toIso8601String(),
+      };
+
+  static SalesActivityItem fromJson(Map<String, dynamic> j) {
+    return SalesActivityItem(
+      id: j['id'] as String? ?? '',
+      text: j['text'] as String? ?? '',
+      createdAt: _parseDateTime(j['createdAt']),
+      updatedAt: j['updatedAt'] != null ? _parseDateTime(j['updatedAt']) : null,
+    );
+  }
+
+  static DateTime _parseDateTime(dynamic v) {
+    if (v == null) return DateTime.now();
+    if (v is String) return DateTime.tryParse(v) ?? DateTime.now();
+    return DateTime.now();
+  }
+
+  SalesActivityItem copyWith({String? id, String? text, DateTime? createdAt, DateTime? updatedAt}) =>
+      SalesActivityItem(
+        id: id ?? this.id,
+        text: text ?? this.text,
+        createdAt: createdAt ?? this.createdAt,
+        updatedAt: updatedAt ?? this.updatedAt,
+      );
 }
 
 // ========================================
@@ -2071,26 +2141,138 @@ class CustomerDetailScreen extends StatefulWidget {
 
 class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
   late bool _isFavorite;
-  late TextEditingController _memoController;
   final List<String> _salesStatusOptions = ['영업전', '영업중', '영업실패', '영업성공'];
-  Timer? _memoDebounceTimer;
+
+  // 영업현황 임시 편집 상태 (저장 버튼 클릭 시에만 반영)
+  late String _salesStatusDraft;
+  late List<SalesActivityItem> _activitiesDraft;
+  bool _isDirty = false;
+  bool _isSaving = false;
+  bool _activitiesLoaded = false;
 
   @override
   void initState() {
     super.initState();
-    // [FAV] MainNavigationScreen의 즐겨찾기 상태 확인
     final mainState = context.findAncestorStateOfType<_MainNavigationScreenState>();
     _isFavorite = mainState?.isFavorite(widget.customer.customerKey) ?? false;
-    _memoController = TextEditingController(text: widget.customer.memo);
-    _memoController.addListener(_onMemoChanged);
+    _salesStatusDraft = widget.customer.salesStatus;
+    _activitiesDraft = [];
+    _loadActivities();
   }
 
   @override
   void dispose() {
-    _memoController.removeListener(_onMemoChanged);
-    _memoDebounceTimer?.cancel();
-    _memoController.dispose();
     super.dispose();
+  }
+
+  /// SharedPreferences에서 영업활동 로드. 기존 memo가 있으면 1회 마이그레이션.
+  Future<void> _loadActivities() async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = '${widget.customer.customerKey}_sales_activities';
+    final raw = prefs.getString(key);
+    final List<SalesActivityItem> list = [];
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw) as List<dynamic>?;
+        if (decoded != null) {
+          for (final e in decoded) {
+            if (e is Map<String, dynamic>) list.add(SalesActivityItem.fromJson(e));
+          }
+        }
+      } catch (_) {}
+    }
+    // 기존 memo가 있고 활동이 없으면 1회 마이그레이션
+    if (list.isEmpty && widget.customer.memo.trim().isNotEmpty) {
+      list.add(SalesActivityItem(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        text: widget.customer.memo.trim(),
+        createdAt: DateTime.now(),
+        updatedAt: null,
+      ));
+    }
+    if (mounted) {
+      setState(() {
+        _activitiesDraft = list;
+        _activitiesLoaded = true;
+      });
+    }
+  }
+
+  void _markDirty() {
+    if (!_isDirty && mounted) setState(() => _isDirty = true);
+  }
+
+  void _onSalesStatusChanged(String? value) {
+    if (value != null) {
+      setState(() => _salesStatusDraft = value);
+      _markDirty();
+    }
+  }
+
+  void _onAddActivity(String text) {
+    if (text.trim().isEmpty) return;
+    setState(() {
+      _activitiesDraft.insert(
+        0,
+        SalesActivityItem(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          text: text.trim(),
+          createdAt: DateTime.now(),
+          updatedAt: null,
+        ),
+      );
+      _isDirty = true;
+    });
+  }
+
+  void _onEditActivity(String id, String text) {
+    if (text.trim().isEmpty) return;
+    setState(() {
+      final now = DateTime.now();
+      _activitiesDraft = _activitiesDraft.map((a) {
+        if (a.id == id) return a.copyWith(text: text.trim(), updatedAt: now);
+        return a;
+      }).toList();
+      _isDirty = true;
+    });
+  }
+
+  void _onDeleteActivity(String id) {
+    setState(() {
+      _activitiesDraft.removeWhere((a) => a.id == id);
+      _isDirty = true;
+    });
+  }
+
+  /// 저장 버튼: status + activities 일괄 저장 후 스낵바
+  Future<void> _saveDraft() async {
+    if (_isSaving || !_isDirty) return;
+    setState(() => _isSaving = true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = widget.customer.customerKey;
+      await prefs.setString('${key}_status', _salesStatusDraft);
+      final activitiesJson = jsonEncode(_activitiesDraft.map((a) => a.toJson()).toList());
+      await prefs.setString('${key}_sales_activities', activitiesJson);
+      widget.customer.salesStatus = _salesStatusDraft;
+      if (mounted) {
+        setState(() {
+          _isDirty = false;
+          _isSaving = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('저장되었습니다.'), backgroundColor: Color(0xFF4CAF50)),
+        );
+      }
+    } catch (e) {
+      debugPrint('영업현황 저장 오류: $e');
+      if (mounted) {
+        setState(() => _isSaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('저장에 실패했습니다. $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   // [FAV] 즐겨찾기 토글 로직
@@ -2103,66 +2285,6 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
       });
       widget.onFavoriteChanged();
     }
-  }
-
-  // 메모 변경 시 디바운스 저장
-  void _onMemoChanged() {
-    widget.customer.memo = _memoController.text;
-    _memoDebounceTimer?.cancel();
-    _memoDebounceTimer = Timer(const Duration(milliseconds: 400), () {
-      _saveMemo();
-    });
-  }
-
-  // 영업상태 저장
-  Future<void> _saveSalesStatus() async {
-    try {
-      final SharedPreferences prefs = await SharedPreferences.getInstance();
-      await prefs.setString('${widget.customer.customerKey}_status', widget.customer.salesStatus);
-    } catch (e) {
-      debugPrint('영업상태 저장 오류: $e');
-    }
-  }
-
-  // 메모 저장
-  Future<void> _saveMemo() async {
-    try {
-      final SharedPreferences prefs = await SharedPreferences.getInstance();
-      await prefs.setString('${widget.customer.customerKey}_memo', widget.customer.memo);
-    } catch (e) {
-      debugPrint('메모 저장 오류: $e');
-    }
-  }
-
-  // 영업상태 변경
-  void _onSalesStatusChanged(String? value) {
-    if (value != null) {
-      setState(() {
-        widget.customer.salesStatus = value;
-      });
-      _saveSalesStatus();
-    }
-  }
-
-  void _showMemoDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('메모 전체보기'),
-        content: SingleChildScrollView(
-          child: Text(
-            widget.customer.memo.isEmpty ? '(메모 없음)' : widget.customer.memo,
-            style: const TextStyle(fontSize: 14),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('닫기'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -2223,14 +2345,19 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            // 섹션 3: 영업현황
+            // 섹션 3: 영업현황 (임시 편집 + 저장 버튼 일괄 저장)
             _SalesStatusCard(
-              salesStatus: widget.customer.salesStatus,
-              memo: widget.customer.memo,
-              memoController: _memoController,
+              salesStatus: _salesStatusDraft,
+              activities: _activitiesDraft,
               salesStatusOptions: _salesStatusOptions,
               onSalesStatusChanged: _onSalesStatusChanged,
-              onMemoViewAll: _showMemoDialog,
+              onAddActivity: _onAddActivity,
+              onEditActivity: _onEditActivity,
+              onDeleteActivity: _onDeleteActivity,
+              onSave: _saveDraft,
+              isDirty: _isDirty,
+              isSaving: _isSaving,
+              activitiesLoaded: _activitiesLoaded,
             ),
           ],
         ),
@@ -2340,27 +2467,95 @@ class _InfoRow extends StatelessWidget {
 }
 
 // ========================================
-// 영업현황 카드 위젯
+// 영업현황 카드 위젯 (영업상태 + 영업활동 리스트 + 저장 버튼)
 // ========================================
-class _SalesStatusCard extends StatelessWidget {
+class _SalesStatusCard extends StatefulWidget {
   final String salesStatus;
-  final String memo;
-  final TextEditingController memoController;
+  final List<SalesActivityItem> activities;
   final List<String> salesStatusOptions;
   final ValueChanged<String?> onSalesStatusChanged;
-  final VoidCallback onMemoViewAll;
+  final ValueChanged<String> onAddActivity;
+  final void Function(String id, String text) onEditActivity;
+  final ValueChanged<String> onDeleteActivity;
+  final VoidCallback onSave;
+  final bool isDirty;
+  final bool isSaving;
+  final bool activitiesLoaded;
 
   const _SalesStatusCard({
     required this.salesStatus,
-    required this.memo,
-    required this.memoController,
+    required this.activities,
     required this.salesStatusOptions,
     required this.onSalesStatusChanged,
-    required this.onMemoViewAll,
+    required this.onAddActivity,
+    required this.onEditActivity,
+    required this.onDeleteActivity,
+    required this.onSave,
+    required this.isDirty,
+    required this.isSaving,
+    required this.activitiesLoaded,
   });
 
   @override
+  State<_SalesStatusCard> createState() => _SalesStatusCardState();
+}
+
+class _SalesStatusCardState extends State<_SalesStatusCard> {
+  final TextEditingController _activityController = TextEditingController();
+  final FocusNode _activityFocus = FocusNode();
+  String? _editingActivityId;
+  bool _sortNewestFirst = true;
+
+  @override
+  void dispose() {
+    _activityController.dispose();
+    _activityFocus.dispose();
+    super.dispose();
+  }
+
+  void _submitActivity() {
+    final text = _activityController.text.trim();
+    if (text.isEmpty) return;
+    if (_editingActivityId != null) {
+      widget.onEditActivity(_editingActivityId!, text);
+      setState(() {
+        _editingActivityId = null;
+        _activityController.clear();
+      });
+    } else {
+      widget.onAddActivity(text);
+      _activityController.clear();
+    }
+  }
+
+  void _startEdit(SalesActivityItem item) {
+    setState(() {
+      _editingActivityId = item.id;
+      _activityController.text = item.text;
+      _activityController.selection = TextSelection.collapsed(offset: item.text.length);
+    });
+    _activityFocus.requestFocus();
+  }
+
+  void _cancelEdit() {
+    setState(() {
+      _editingActivityId = null;
+      _activityController.clear();
+    });
+  }
+
+  static String _formatDateTime(DateTime dt) {
+    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
+        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final sortedActivities = List<SalesActivityItem>.from(widget.activities);
+    sortedActivities.sort((a, b) => _sortNewestFirst
+        ? b.createdAt.compareTo(a.createdAt)
+        : a.createdAt.compareTo(b.createdAt));
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -2390,6 +2585,25 @@ class _SalesStatusCard extends StatelessWidget {
             const SizedBox(height: 16),
             const Divider(color: Color(0xFFE0E0E0)),
             const SizedBox(height: 16),
+            // 변경사항 있음 표시
+            if (widget.isDirty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 18, color: Colors.orange[700]),
+                    const SizedBox(width: 6),
+                    Text(
+                      '변경사항 있음',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.orange[700],
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             // 영업상태
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2407,10 +2621,10 @@ class _SalesStatusCard extends StatelessWidget {
                 const SizedBox(width: 16),
                 Expanded(
                   child: DropdownButton<String>(
-                    value: salesStatus,
+                    value: widget.salesStatus,
                     isExpanded: true,
                     underline: Container(),
-                    items: salesStatusOptions.map((String status) {
+                    items: widget.salesStatusOptions.map((String status) {
                       return DropdownMenuItem<String>(
                         value: status,
                         child: Text(
@@ -2423,65 +2637,41 @@ class _SalesStatusCard extends StatelessWidget {
                         ),
                       );
                     }).toList(),
-                    onChanged: onSalesStatusChanged,
+                    onChanged: widget.onSalesStatusChanged,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            // 메모
+            const SizedBox(height: 20),
+            // 영업활동
+            Text(
+              '영업활동',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 8),
             Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                SizedBox(
-                  width: 100,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '메모',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                      if (memo.isNotEmpty)
-                        TextButton(
-                          onPressed: onMemoViewAll,
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.only(top: 4),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          child: const Text(
-                            '전체 보기',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFFFF6F61),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 16),
                 Expanded(
                   child: TextField(
-                    controller: memoController,
+                    controller: _activityController,
+                    focusNode: _activityFocus,
                     keyboardType: TextInputType.multiline,
                     textInputAction: TextInputAction.newline,
-                    maxLines: 5,
-                    enableInteractiveSelection: true,
+                    maxLines: 3,
                     style: const TextStyle(
                       fontSize: 14,
                       color: Color(0xFF1A1A1A),
                       fontWeight: FontWeight.w500,
                     ),
                     decoration: InputDecoration(
-                      hintText: '영업 메모를 입력하세요',
-                      hintStyle: TextStyle(
-                        color: Colors.grey[400],
-                      ),
+                      hintText: _editingActivityId != null
+                          ? '내용 수정 후 "수정 완료"를 누르세요'
+                          : '영업활동 내용을 입력하세요',
+                      hintStyle: TextStyle(color: Colors.grey[400]),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                         borderSide: BorderSide(color: Colors.grey[300]!),
@@ -2498,10 +2688,169 @@ class _SalesStatusCard extends StatelessWidget {
                     ),
                   ),
                 ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: () => _submitActivity(),
+                  icon: Icon(_editingActivityId != null ? Icons.check : Icons.add, size: 18),
+                  label: Text(_editingActivityId != null ? '수정 완료' : '추가'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF6F61),
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+                if (_editingActivityId != null) ...[
+                  const SizedBox(width: 4),
+                  TextButton(
+                    onPressed: _cancelEdit,
+                    child: const Text('취소'),
+                  ),
+                ],
               ],
+            ),
+            const SizedBox(height: 16),
+            // 영업활동 리스트 (최신순/오래된순 토글)
+            if (widget.activitiesLoaded) ...[
+              if (sortedActivities.isNotEmpty) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '기록 (${sortedActivities.length}건)',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () => setState(() => _sortNewestFirst = !_sortNewestFirst),
+                      icon: Icon(
+                        _sortNewestFirst ? Icons.arrow_downward : Icons.arrow_upward,
+                        size: 16,
+                      ),
+                      label: Text(
+                        _sortNewestFirst ? '최신순' : '오래된순',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ...sortedActivities.map((a) => _ActivityCard(
+                      item: a,
+                      onEdit: () => _startEdit(a),
+                      onDelete: () => widget.onDeleteActivity(a.id),
+                      formatDateTime: _formatDateTime,
+                    )),
+                const SizedBox(height: 16),
+              ],
+            ] else
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Center(child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )),
+              ),
+            const SizedBox(height: 16),
+            const Divider(color: Color(0xFFE0E0E0)),
+            const SizedBox(height: 12),
+            // 저장 버튼
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: (widget.isDirty && !widget.isSaving) ? widget.onSave : null,
+                icon: widget.isSaving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.save, size: 18),
+                label: Text(widget.isSaving ? '저장 중...' : '저장'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFFF6F61),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// 영업활동 카드 한 건 (날짜/시간, 내용, 편집/삭제 아이콘)
+class _ActivityCard extends StatelessWidget {
+  final SalesActivityItem item;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final String Function(DateTime) formatDateTime;
+
+  const _ActivityCard({
+    required this.item,
+    required this.onEdit,
+    required this.onDelete,
+    required this.formatDateTime,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final displayTime = item.updatedAt != null ? item.updatedAt! : item.createdAt;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  formatDateTime(displayTime),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  item.text,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF1A1A1A),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.edit_outlined, size: 20, color: Color(0xFFFF6F61)),
+                onPressed: onEdit,
+                padding: const EdgeInsets.all(4),
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              ),
+              IconButton(
+                icon: Icon(Icons.delete_outline, size: 20, color: Colors.grey[700]),
+                onPressed: onDelete,
+                padding: const EdgeInsets.all(4),
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
