@@ -23,6 +23,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -79,6 +80,21 @@ void main() async {
     debugPrint('✅ CSV 로딩 테스트 성공: customerlist.csv (${testCsv.length} bytes)');
   } catch (e) {
     debugPrint('⚠️ CSV 로딩 테스트 실패 (앱은 계속 실행): $e');
+  }
+  
+  // [DEBUG] Firestore users 컬렉션 조회
+  try {
+    final firestore = FirebaseFirestore.instance;
+    final usersSnapshot = await firestore.collection('users').get();
+    debugPrint('📋 ===== Firestore users 컬렉션 조회 =====');
+    debugPrint('📋 총 ${usersSnapshot.docs.length}개의 사용자 문서');
+    for (final doc in usersSnapshot.docs) {
+      final data = doc.data();
+      debugPrint('  👤 [${doc.id}] id=${data['id']}, name=${data['name']}, role=${data['role']}, scope=${data['scope']}');
+    }
+    debugPrint('📋 ========================================');
+  } catch (e) {
+    debugPrint('⚠️ Firestore users 조회 실패: $e');
   }
   
   runApp(
