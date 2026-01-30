@@ -42,6 +42,15 @@ service cloud.firestore {
       allow write: if true;
     }
     
+    // 사용자 관리 (로그인/관리자)
+    match /users/{document} {
+      // 읽기: 모든 사용자 허용 (로그인 시 조회)
+      allow read: if true;
+      
+      // 쓰기: 관리자만 허용 (현재는 Firebase Auth 미사용이므로 임시로 true)
+      allow write: if true;
+    }
+    
     // 기타 컬렉션 규칙...
   }
 }
@@ -68,6 +77,11 @@ service cloud.firestore {
     
     // 홈 프로모션 배너 (개발용 - 모든 사용자 허용)
     match /home_promotions/{document} {
+      allow read, write: if true;
+    }
+    
+    // 사용자 관리 (개발용 - 모든 사용자 허용)
+    match /users/{document} {
       allow read, write: if true;
     }
   }
@@ -114,6 +128,39 @@ csv_files/customerlist.csv
 - `size` (number): 파일 크기 (bytes)
 - `success` (boolean): 업로드 성공 여부
 - `message` (string): 결과 메시지
+
+### users 컬렉션
+
+**경로**: `users/{userId_role}`
+
+**문서 ID**: `{사용자ID}_{역할}` 형식 (예: `1111_admin`, `emp001_user`)
+
+**필드**:
+- `id` (string): 사용자 ID (로그인 아이디)
+- `name` (string): 사용자 이름
+- `hq` (string): 본부
+- `branch` (string): 지사
+- `role` (string): 역할 (`user`, `manager`, `admin`)
+- `scope` (string): 조회 범위 (`self`, `branch`, `hq`, `all`)
+- `isActive` (boolean): 활성 상태
+- `sellerName` (string, optional): 실판매자명 (SELF 조회용)
+- `password` (string): 비밀번호 (개발용 - 프로덕션에서는 Firebase Auth 사용 권장)
+
+**예시 문서**:
+```
+users/1111_admin
+{
+  id: "1111",
+  name: "관리자",
+  hq: "",
+  branch: "",
+  role: "admin",
+  scope: "all",
+  isActive: true,
+  sellerName: null,
+  password: "1111"
+}
+```
 
 ## 참고사항
 

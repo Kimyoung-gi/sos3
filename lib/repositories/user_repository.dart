@@ -1,144 +1,188 @@
-import 'dart:convert';
-
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/user.dart';
 
-/// 사용자 저장소 (로컬 SharedPreferences). 나중에 서버 구현체로 교체 가능.
+/// 사용자 저장소 (Firestore 기반 - 모든 기기에서 동기화)
 class UserRepository {
-  static const _key = 'sos_users';
-  static const _keyPasswords = 'sos_user_passwords'; // id -> pw (평문, 개발용)
+  static const _collection = 'users';
+  
+  FirebaseFirestore get _firestore => FirebaseFirestore.instance;
+  CollectionReference<Map<String, dynamic>> get _usersRef => 
+      _firestore.collection(_collection);
 
-  Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
+  /// Firestore 문서 ID 생성 (id_role 형태)
+  String _docId(String userId, bool isAdmin) => 
+      '${userId}_${isAdmin ? 'admin' : 'user'}';
 
+  /// Firestore에서 모든 사용자 로드
   Future<List<User>> _load() async {
-    final prefs = await _prefs();
-    final raw = prefs.getString(_key);
-    if (raw == null || raw.isEmpty) return [];
     try {
-      final list = jsonDecode(raw) as List<dynamic>?;
-      if (list == null) return [];
-      return list.map((e) => User.fromJson((e as Map).cast<String, dynamic>())).toList();
+      final snapshot = await _usersRef.get();
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        return User.fromJson(data);
+      }).toList();
     } catch (e) {
       debugPrint('UserRepository._load: $e');
       return [];
     }
   }
 
-  Future<Map<String, String>> _loadPasswords() async {
-    final prefs = await _prefs();
-    final raw = prefs.getString(_keyPasswords);
-    if (raw == null || raw.isEmpty) return {};
-    try {
-      final map = jsonDecode(raw) as Map<String, dynamic>?;
-      if (map == null) return {};
-      return map.map((k, v) => MapEntry(k, v?.toString() ?? ''));
-    } catch (e) {
-      debugPrint('UserRepository._loadPasswords: $e');
-      return {};
-    }
-  }
-
-  Future<void> _save(List<User> users, Map<String, String> passwords) async {
-    final prefs = await _prefs();
-    await prefs.setString(_key, jsonEncode(users.map((e) => e.toJson()).toList()));
-    await prefs.setString(_keyPasswords, jsonEncode(passwords));
-  }
-
   /// 기본 계정 생성: USER 1111/1111 SELF, ADMIN 1111/1111
   Future<void> ensureDefaults() async {
-    final users = await _load();
-    final passwords = await _loadPasswords();
-    final hasUser = users.any((u) => u.id == '1111');
-    if (hasUser) return;
-
-    final defaultUser = User(
-      id: '1111',
-      name: '일반사용자',
-      hq: '',
-      branch: '',
-      role: UserRole.user,
-      scope: UserScope.self,
-      isActive: true,
-    );
-    final defaultAdmin = User(
-      id: '1111',
-      name: '관리자',
-      hq: '',
-      branch: '',
-      role: UserRole.admin,
-      scope: UserScope.all,
-      isActive: true,
-    );
-    users.addAll([defaultUser, defaultAdmin]);
-    passwords['1111_user'] = '1111';
-    passwords['1111_admin'] = '1111';
-    await _save(users, passwords);
+    try {
+      // 기본 사용자 존재 여부 확인
+      final userDoc = await _usersRef.doc('1111_user').get();
+      final adminDoc = await _usersRef.doc('1111_admin').get();
+      
+      if (!userDoc.exists) {
+        await _usersRef.doc('1111_user').set({
+          'id': '1111',
+          'name': '일반사용자',
+          'hq': '',
+          'branch': '',
+          'role': 'user',
+          'scope': 'self',
+          'isActive': true,
+          'sellerName': null,
+          'password': '1111',
+        });
+        debugPrint('✅ 기본 사용자(1111_user) 생성 완료');
+      }
+      
+      if (!adminDoc.exists) {
+        await _usersRef.doc('1111_admin').set({
+          'id': '1111',
+          'name': '관리자',
+          'hq': '',
+          'branch': '',
+          'role': 'admin',
+          'scope': 'all',
+          'isActive': true,
+          'sellerName': null,
+          'password': '1111',
+        });
+        debugPrint('✅ 기본 관리자(1111_admin) 생성 완료');
+      }
+    } catch (e) {
+      debugPrint('⚠️ ensureDefaults 오류: $e');
+    }
   }
 
   /// id/pw로 사용자 조회. 일반 로그인용 (USER 우선)
   Future<User?> findByCredentials(String id, String password) async {
-    final users = await _load();
-    final passwords = await _loadPasswords();
-    final nonAdmin = users.where((e) => e.id == id && !e.isAdmin).toList();
-    final key = '${id}_user';
-    if (passwords[key] == password && nonAdmin.isNotEmpty) return nonAdmin.first;
-    final admin = users.where((e) => e.id == id && e.isAdmin).firstOrNull;
-    if (admin != null && passwords['${id}_admin'] == password) return admin;
-    return null;
+    try {
+      // 일반 사용자 먼저 확인
+      final userDoc = await _usersRef.doc('${id}_user').get();
+      if (userDoc.exists) {
+        final data = userDoc.data()!;
+        if (data['password'] == password && data['isActive'] == true) {
+          return User.fromJson(data);
+        }
+      }
+      
+      // 관리자 확인
+      final adminDoc = await _usersRef.doc('${id}_admin').get();
+      if (adminDoc.exists) {
+        final data = adminDoc.data()!;
+        if (data['password'] == password && data['isActive'] == true) {
+          return User.fromJson(data);
+        }
+      }
+      
+      return null;
+    } catch (e) {
+      debugPrint('findByCredentials 오류: $e');
+      return null;
+    }
   }
 
   /// 관리자 로그인: id/pw 일치하는 ADMIN만
   Future<User?> findAdminByCredentials(String id, String password) async {
-    final users = await _load();
-    final passwords = await _loadPasswords();
-    final admin = users.where((e) => e.id == id && e.isAdmin).firstOrNull;
-    if (admin == null) return null;
-    if (passwords['${id}_admin'] != password) return null;
-    return admin;
+    try {
+      final adminDoc = await _usersRef.doc('${id}_admin').get();
+      if (!adminDoc.exists) return null;
+      
+      final data = adminDoc.data()!;
+      if (data['password'] != password) return null;
+      if (data['isActive'] != true) return null;
+      
+      return User.fromJson(data);
+    } catch (e) {
+      debugPrint('findAdminByCredentials 오류: $e');
+      return null;
+    }
   }
 
   Future<User?> getById(String id) async {
-    final users = await _load();
-    return users.where((e) => e.id == id).firstOrNull;
+    try {
+      // 일반 사용자 먼저
+      final userDoc = await _usersRef.doc('${id}_user').get();
+      if (userDoc.exists) return User.fromJson(userDoc.data()!);
+      
+      // 관리자
+      final adminDoc = await _usersRef.doc('${id}_admin').get();
+      if (adminDoc.exists) return User.fromJson(adminDoc.data()!);
+      
+      return null;
+    } catch (e) {
+      debugPrint('getById 오류: $e');
+      return null;
+    }
   }
 
   Future<List<User>> list() async => _load();
 
   Future<void> create(User user, String password) async {
-    final users = await _load();
-    final passwords = await _loadPasswords();
-    if (users.any((e) => e.id == user.id && e.isAdmin == user.isAdmin)) {
+    final docId = _docId(user.id, user.isAdmin);
+    
+    // 중복 체크
+    final existing = await _usersRef.doc(docId).get();
+    if (existing.exists) {
       throw Exception('이미 존재하는 아이디/역할입니다.');
     }
-    users.add(user);
-    final key = user.isAdmin ? '${user.id}_admin' : '${user.id}_user';
-    passwords[key] = password;
-    await _save(users, passwords);
+    
+    // Firestore에 저장
+    await _usersRef.doc(docId).set({
+      ...user.toJson(),
+      'password': password,
+    });
+    debugPrint('✅ 사용자 생성 완료: $docId');
   }
 
   Future<void> update(User user, {String? newPassword}) async {
-    final users = await _load();
-    final passwords = await _loadPasswords();
-    final i = users.indexWhere((e) => e.id == user.id && e.isAdmin == user.isAdmin);
-    if (i < 0) throw Exception('사용자를 찾을 수 없습니다.');
-    users[i] = user;
-    if (newPassword != null) {
-      final key = user.isAdmin ? '${user.id}_admin' : '${user.id}_user';
-      passwords[key] = newPassword;
+    final docId = _docId(user.id, user.isAdmin);
+    
+    // 존재 여부 확인
+    final existing = await _usersRef.doc(docId).get();
+    if (!existing.exists) {
+      throw Exception('사용자를 찾을 수 없습니다.');
     }
-    await _save(users, passwords);
+    
+    // 업데이트
+    final updateData = user.toJson();
+    if (newPassword != null) {
+      updateData['password'] = newPassword;
+    } else {
+      // 기존 비밀번호 유지
+      updateData['password'] = existing.data()!['password'];
+    }
+    
+    await _usersRef.doc(docId).set(updateData);
+    debugPrint('✅ 사용자 수정 완료: $docId');
   }
 
   Future<void> delete(User user) async {
-    final users = await _load();
-    final passwords = await _loadPasswords();
-    final i = users.indexWhere((e) => e.id == user.id && e.isAdmin == user.isAdmin);
-    if (i < 0) throw Exception('사용자를 찾을 수 없습니다.');
-    users.removeAt(i);
-    final key = user.isAdmin ? '${user.id}_admin' : '${user.id}_user';
-    passwords.remove(key);
-    await _save(users, passwords);
+    final docId = _docId(user.id, user.isAdmin);
+    
+    // 존재 여부 확인
+    final existing = await _usersRef.doc(docId).get();
+    if (!existing.exists) {
+      throw Exception('사용자를 찾을 수 없습니다.');
+    }
+    
+    await _usersRef.doc(docId).delete();
+    debugPrint('✅ 사용자 삭제 완료: $docId');
   }
 }
