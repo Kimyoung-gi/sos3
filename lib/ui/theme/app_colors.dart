@@ -9,11 +9,29 @@ class AppColors {
   static const Color primaryDark = Color(0xFFF04E45);
   static const Color primaryLight = Color(0xFFFFE8E6);
 
-  // Background
-  static const Color background = Color(0xFFF6F7F9);
+  // 고객관리 시안 Red (#E6002D 계열)
+  static const Color customerRed = Color(0xFFE6002D);
+  static const Color pillSelectedBg = Color(0xFFE6002D);
+  static const Color pillUnselectedBg = Color(0xFFE8E9EC);
+  static const Color pillUnselectedText = Color(0xFF6B7280);
+
+  // Background (밝은 라이트 그레이 - SOS 2.0)
+  static const Color background = Color(0xFFF5F6F8);
 
   // Card
   static const Color card = Color(0xFFFFFFFF);
+
+  // 인사 카드
+  static const LinearGradient greetingGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFFE53935), Color(0xFFC62828)],
+  );
+  static const Color greetingTextWhite = Color(0xFFFFFFFF);
+  static const Color greetingTextWhite70 = Color(0xB3FFFFFF);
+
+  // 섹션 "전체보기" 링크
+  static const Color sectionSeeAll = Color(0xFFFF6B63);
 
   // Text
   static const Color textPrimary = Color(0xFF111318);

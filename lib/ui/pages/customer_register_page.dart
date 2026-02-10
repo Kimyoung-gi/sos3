@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../../models/customer.dart';
 import '../../repositories/customer_repository.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_dimens.dart';
 
 /// 고객사 등록 페이지
 class CustomerRegisterPage extends StatefulWidget {
@@ -121,9 +123,9 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
     
     if (!_isFormValid) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('필수 항목을 모두 입력해주세요.'),
-          backgroundColor: Colors.orange,
+        SnackBar(
+          content: const Text('필수 항목을 모두 입력해주세요.'),
+          backgroundColor: AppColors.statusProgress,
         ),
       );
       return;
@@ -163,16 +165,19 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
         final shouldOverwrite = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('중복 고객'),
-            content: const Text('이미 등록된 고객입니다. 덮어쓰시겠습니까?'),
+            title: Text('중복 고객', style: TextStyle(color: AppColors.textPrimary)),
+            content: Text(
+              '이미 등록된 고객입니다. 덮어쓰시겠습니까?',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('취소'),
+                child: Text('취소', style: TextStyle(color: AppColors.textSecondary)),
               ),
               FilledButton(
                 onPressed: () => Navigator.of(context).pop(true),
-                style: FilledButton.styleFrom(backgroundColor: Colors.orange),
+                style: FilledButton.styleFrom(backgroundColor: AppColors.customerRed),
                 child: const Text('덮어쓰기'),
               ),
             ],
@@ -218,10 +223,10 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
   /// 등록 후 목록 화면으로 돌아가기
   void _navigateToDetail(Customer customer) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('등록 완료'),
-        backgroundColor: Colors.green,
-        duration: Duration(seconds: 2),
+      SnackBar(
+        content: const Text('등록 완료'),
+        backgroundColor: AppColors.statusComplete,
+        duration: const Duration(seconds: 2),
       ),
     );
     
@@ -235,27 +240,63 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.red,
+        backgroundColor: AppColors.customerRed,
       ),
     );
   }
   
+  InputDecoration _inputDecoration({
+    required String labelText,
+    String? hintText,
+    Widget? suffixIcon,
+    bool alignLabelWithHint = false,
+  }) {
+    return InputDecoration(
+      labelText: labelText,
+      hintText: hintText,
+      hintStyle: TextStyle(color: AppColors.textSecondary),
+      labelStyle: TextStyle(color: AppColors.textSecondary),
+      suffixIcon: suffixIcon,
+      alignLabelWithHint: alignLabelWithHint,
+      filled: true,
+      fillColor: AppColors.card,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppDimens.inputRadius),
+        borderSide: const BorderSide(color: AppColors.border),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppDimens.inputRadius),
+        borderSide: const BorderSide(color: AppColors.border),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppDimens.inputRadius),
+        borderSide: const BorderSide(color: AppColors.customerRed, width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppDimens.inputRadius),
+        borderSide: const BorderSide(color: AppColors.customerRed),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: AppColors.background,
         elevation: 0,
+        scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
+        title: Text(
           '고객사 등록',
           style: TextStyle(
             fontSize: 18,
-            color: Colors.black,
+            color: AppColors.textPrimary,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -263,7 +304,7 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
       body: Form(
         key: _formKey,
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
+          padding: EdgeInsets.all(AppDimens.pagePadding),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -273,46 +314,40 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
                 children: [
                   TextFormField(
                     controller: _customerNameController,
-                    decoration: const InputDecoration(
-                      labelText: '고객명 *',
-                      border: OutlineInputBorder(),
-                    ),
+                    style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
+                    decoration: _inputDecoration(labelText: '고객명 *'),
                     validator: (value) => value?.trim().isEmpty ?? true ? '고객명을 입력하세요' : null,
                     onChanged: (_) => setState(() {}),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _openDateController,
-                    decoration: const InputDecoration(
-                      labelText: '개통일자 *',
-                      border: OutlineInputBorder(),
-                      suffixIcon: Icon(Icons.calendar_today),
-                    ),
                     readOnly: true,
                     onTap: _selectDate,
+                    style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
+                    decoration: _inputDecoration(
+                      labelText: '개통일자 *',
+                      suffixIcon: Icon(Icons.calendar_today, size: 20, color: AppColors.textSecondary),
+                    ),
                     validator: (value) => value?.trim().isEmpty ?? true ? '개통일자를 선택하세요' : null,
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _personInChargeController,
-                    decoration: const InputDecoration(
-                      labelText: '담당자',
-                      hintText: '담당자 이름',
-                      border: OutlineInputBorder(),
-                    ),
+                    style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
+                    decoration: _inputDecoration(labelText: '담당자', hintText: '담당자 이름'),
                     onChanged: (_) => setState(() {}),
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     value: _selectedProductType,
-                    decoration: const InputDecoration(
-                      labelText: '상품유형 *',
-                      border: OutlineInputBorder(),
-                    ),
+                    decoration: _inputDecoration(labelText: '상품유형 *'),
+                    dropdownColor: AppColors.card,
+                    style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
                     items: _productTypeOptions.map((type) {
                       return DropdownMenuItem(
                         value: type,
-                        child: Text(type),
+                        child: Text(type, style: TextStyle(color: AppColors.textPrimary)),
                       );
                     }).toList(),
                     onChanged: (value) => setState(() => _selectedProductType = value),
@@ -321,20 +356,16 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _productNameController,
-                    decoration: const InputDecoration(
-                      labelText: '상품명 *',
-                      border: OutlineInputBorder(),
-                    ),
+                    style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
+                    decoration: _inputDecoration(labelText: '상품명 *'),
                     validator: (value) => value?.trim().isEmpty ?? true ? '상품명을 입력하세요' : null,
                     onChanged: (_) => setState(() {}),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _buildingController,
-                    decoration: const InputDecoration(
-                      labelText: '건물명',
-                      border: OutlineInputBorder(),
-                    ),
+                    style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
+                    decoration: _inputDecoration(labelText: '건물명'),
                     onChanged: (_) => setState(() {}),
                   ),
                 ],
@@ -346,14 +377,13 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
                 children: [
                   DropdownButtonFormField<String>(
                     value: _selectedHq,
-                    decoration: const InputDecoration(
-                      labelText: '본부 *',
-                      border: OutlineInputBorder(),
-                    ),
+                    decoration: _inputDecoration(labelText: '본부 *'),
+                    dropdownColor: AppColors.card,
+                    style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
                     items: _hqOptions.map((hq) {
                       return DropdownMenuItem(
                         value: hq,
-                        child: Text(hq),
+                        child: Text(hq, style: TextStyle(color: AppColors.textPrimary)),
                       );
                     }).toList(),
                     onChanged: (value) => setState(() => _selectedHq = value),
@@ -362,19 +392,17 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _branchController,
-                    decoration: const InputDecoration(
-                      labelText: '지사',
-                      border: OutlineInputBorder(),
-                    ),
+                    style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
+                    decoration: _inputDecoration(labelText: '지사'),
                     onChanged: (_) => setState(() {}),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _sellerController,
-                    decoration: const InputDecoration(
+                    style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
+                    decoration: _inputDecoration(
                       labelText: '실판매자(MATE)',
                       hintText: '예: 1108713/조태호',
-                      border: OutlineInputBorder(),
                     ),
                     onChanged: (_) => setState(() {}),
                   ),
@@ -387,14 +415,13 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
                 children: [
                   DropdownButtonFormField<String>(
                     value: _selectedSalesStatus,
-                    decoration: const InputDecoration(
-                      labelText: '영업상태 *',
-                      border: OutlineInputBorder(),
-                    ),
+                    decoration: _inputDecoration(labelText: '영업상태 *'),
+                    dropdownColor: AppColors.card,
+                    style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
                     items: _salesStatusOptions.map((status) {
                       return DropdownMenuItem(
                         value: status,
-                        child: Text(status),
+                        child: Text(status, style: TextStyle(color: AppColors.textPrimary)),
                       );
                     }).toList(),
                     onChanged: (value) => setState(() => _selectedSalesStatus = value),
@@ -403,30 +430,33 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _memoController,
-                    decoration: const InputDecoration(
-                      labelText: '메모',
-                      border: OutlineInputBorder(),
-                      alignLabelWithHint: true,
-                    ),
+                    style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
+                    decoration: _inputDecoration(labelText: '메모', alignLabelWithHint: true),
                     maxLines: 4,
                     onChanged: (_) => setState(() {}),
                   ),
                 ],
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 28),
               // 저장 버튼
               SizedBox(
                 width: double.infinity,
+                height: 48,
                 child: FilledButton(
                   onPressed: (_isLoading || !_isFormValid) ? null : _save,
                   style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFFFF6F61),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    backgroundColor: AppColors.customerRed,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppDimens.filterPillRadius),
+                    ),
+                    elevation: 0,
                   ),
                   child: _isLoading
                       ? const SizedBox(
-                          width: 20,
-                          height: 20,
+                          width: 22,
+                          height: 22,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
                             color: Colors.white,
@@ -434,7 +464,7 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
                         )
                       : const Text(
                           '저장',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                         ),
                 ),
               ),
@@ -446,7 +476,7 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
   }
 }
 
-/// 정보 카드 위젯 (섹션 카드)
+/// 정보 카드 위젯 (섹션 카드 - 톤앤매너)
 class _InfoCard extends StatelessWidget {
   final String title;
   final List<Widget> children;
@@ -461,12 +491,12 @@ class _InfoCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(AppDimens.customerCardRadius),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 12,
             offset: const Offset(0, 2),
           ),
         ],
@@ -476,10 +506,10 @@ class _InfoCard extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
-              fontSize: 18,
+            style: TextStyle(
+              fontSize: 17,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF1A1A1A),
+              color: AppColors.textPrimary,
             ),
           ),
           const SizedBox(height: 16),

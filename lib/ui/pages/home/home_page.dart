@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../theme/app_colors.dart';
 import '../../theme/app_dimens.dart';
-import 'widgets/home_banner_carousel.dart';
+import 'widgets/home_greeting_card.dart';
 import 'widgets/home_quick_actions.dart';
 import 'widgets/home_recent_activity.dart';
 
-/// 홈 페이지 - 배너, 빠른실행, 최근활동
+/// 홈 페이지 - 인사 카드, 빠른실행, 즐겨찾기/최근 등록 고객사 (SOS 2.0 톤앤매너)
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
 
@@ -16,11 +16,12 @@ class HomePage extends StatelessWidget {
       backgroundColor: AppColors.background,
       body: CustomScrollView(
         slivers: [
-          // AppBar
           SliverAppBar(
-            backgroundColor: AppColors.card,
+            backgroundColor: AppColors.background,
             elevation: 0,
-            leading: Padding(
+            automaticallyImplyLeading: false,
+            leadingWidth: 0,
+            title: Padding(
               padding: const EdgeInsets.all(8.0),
               child: Image.asset(
                 'assets/images/sos_logo.png',
@@ -29,19 +30,18 @@ class HomePage extends StatelessWidget {
                 filterQuality: FilterQuality.high,
               ),
             ),
-            leadingWidth: 120,
+            centerTitle: true,
             actions: const [],
             floating: true,
             snap: true,
           ),
-          // 배너 캐러셀
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppDimens.pagePadding,
                 vertical: AppDimens.cardSpacing,
               ),
-              child: const HomeBannerCarousel(),
+              child: const HomeGreetingCard(),
             ),
           ),
           // 빠른 실행
@@ -54,7 +54,7 @@ class HomePage extends StatelessWidget {
               child: const HomeQuickActions(),
             ),
           ),
-          // 최근 활동
+          // 즐겨찾기 + 최근 등록한 고객사
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(

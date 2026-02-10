@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/auth_service.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_dimens.dart';
 
 /// 관리자 로그인 페이지.
 class AdminLoginPage extends StatefulWidget {
@@ -65,20 +67,21 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F8FA),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('관리자 로그인'),
-        backgroundColor: Colors.transparent,
+        title: Text('관리자 로그인', style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600)),
+        backgroundColor: AppColors.background,
         elevation: 0,
+        scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => context.go('/login'),
         ),
       ),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
+            padding: EdgeInsets.symmetric(horizontal: AppDimens.pagePadding + 8),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 400),
               child: Column(
@@ -86,59 +89,121 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
                 children: [
                   Image.asset(
                     'assets/images/sos_logo.png',
-                    height: 64,
+                    height: 44,
                     fit: BoxFit.contain,
                     filterQuality: FilterQuality.high,
                   ),
-                  const SizedBox(height: 24),
-                  TextField(
-                    controller: _idController,
-                    focusNode: _idFocus,
-                    decoration: InputDecoration(
-                      labelText: '아이디',
-                      hintText: '관리자 아이디',
-                      errorText: _idError,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      filled: true,
-                      fillColor: Colors.white,
-                    ),
-                    textInputAction: TextInputAction.next,
-                    onSubmitted: (_) => _pwFocus.requestFocus(),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _pwController,
-                    focusNode: _pwFocus,
-                    obscureText: true,
-                    decoration: InputDecoration(
-                      labelText: '비밀번호',
-                      hintText: '비밀번호',
-                      errorText: _pwError,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      filled: true,
-                      fillColor: Colors.white,
-                    ),
-                    textInputAction: TextInputAction.done,
-                    onSubmitted: (_) => _submit(),
-                  ),
-                  const SizedBox(height: 24),
-                  SizedBox(
+                  const SizedBox(height: 20),
+                  // 로그인 폼 카드 (사이트 카드 스타일)
+                  Container(
                     width: double.infinity,
-                    child: FilledButton(
-                      onPressed: _loading ? null : _submit,
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        backgroundColor: const Color(0xFFFF6F61),
-                      ),
-                      child: _loading
-                          ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : const Text('관리자 로그인'),
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: AppColors.card,
+                      borderRadius: BorderRadius.circular(AppDimens.customerCardRadius),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.08),
+                          blurRadius: 12,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        TextField(
+                          controller: _idController,
+                          focusNode: _idFocus,
+                          style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
+                          decoration: InputDecoration(
+                            labelText: '아이디',
+                            hintText: '관리자 아이디',
+                            hintStyle: TextStyle(color: AppColors.textSecondary),
+                            labelStyle: TextStyle(color: AppColors.textSecondary),
+                            errorText: _idError,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(AppDimens.inputRadius),
+                              borderSide: const BorderSide(color: AppColors.border),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(AppDimens.inputRadius),
+                              borderSide: const BorderSide(color: AppColors.border),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(AppDimens.inputRadius),
+                              borderSide: const BorderSide(color: AppColors.customerRed, width: 1.5),
+                            ),
+                            filled: true,
+                            fillColor: AppColors.card,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          ),
+                          textInputAction: TextInputAction.next,
+                          onSubmitted: (_) => _pwFocus.requestFocus(),
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: _pwController,
+                          focusNode: _pwFocus,
+                          obscureText: true,
+                          style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
+                          decoration: InputDecoration(
+                            labelText: '비밀번호',
+                            hintText: '비밀번호',
+                            hintStyle: TextStyle(color: AppColors.textSecondary),
+                            labelStyle: TextStyle(color: AppColors.textSecondary),
+                            errorText: _pwError,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(AppDimens.inputRadius),
+                              borderSide: const BorderSide(color: AppColors.border),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(AppDimens.inputRadius),
+                              borderSide: const BorderSide(color: AppColors.border),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(AppDimens.inputRadius),
+                              borderSide: const BorderSide(color: AppColors.customerRed, width: 1.5),
+                            ),
+                            filled: true,
+                            fillColor: AppColors.card,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          ),
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) => _submit(),
+                        ),
+                        const SizedBox(height: 24),
+                        SizedBox(
+                          height: 48,
+                          child: FilledButton(
+                            onPressed: _loading ? null : _submit,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppColors.customerRed,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(AppDimens.filterPillRadius),
+                              ),
+                              elevation: 0,
+                            ),
+                            child: _loading
+                                ? const SizedBox(
+                                    height: 22,
+                                    width: 22,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  )
+                                : const Text('관리자 로그인', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
                   TextButton(
                     onPressed: () => context.go('/login'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.textSecondary,
+                    ),
                     child: const Text('일반 로그인으로 돌아가기'),
                   ),
                 ],

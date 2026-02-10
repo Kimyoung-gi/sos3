@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/auth_service.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_dimens.dart';
 
 /// 일반 로그인 페이지. 로고, 아이디/비밀번호, 로그인 버튼, 관리자 링크.
 class LoginPage extends StatefulWidget {
@@ -65,11 +67,11 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F8FA),
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
+            padding: EdgeInsets.symmetric(horizontal: AppDimens.pagePadding + 8),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 400),
               child: Column(
@@ -84,60 +86,123 @@ class _LoginPageState extends State<LoginPage> {
                   const SizedBox(height: 8),
                   Text(
                     'SOS 2.0',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: const Color(0xFF1A1A1A),
-                        ),
-                  ),
-                  const SizedBox(height: 32),
-                  TextField(
-                    controller: _idController,
-                    focusNode: _idFocus,
-                    decoration: InputDecoration(
-                      labelText: '아이디',
-                      hintText: '아이디 입력',
-                      errorText: _idError,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      filled: true,
-                      fillColor: Colors.white,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
                     ),
-                    textInputAction: TextInputAction.next,
-                    onSubmitted: (_) => _pwFocus.requestFocus(),
                   ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _pwController,
-                    focusNode: _pwFocus,
-                    obscureText: true,
-                    decoration: InputDecoration(
-                      labelText: '비밀번호',
-                      hintText: '비밀번호 입력',
-                      errorText: _pwError,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      filled: true,
-                      fillColor: Colors.white,
-                    ),
-                    textInputAction: TextInputAction.done,
-                    onSubmitted: (_) => _submit(),
-                  ),
-                  const SizedBox(height: 24),
-                  SizedBox(
+                  const SizedBox(height: 28),
+                  // 로그인 폼 카드 (사이트 카드 스타일)
+                  Container(
                     width: double.infinity,
-                    child: FilledButton(
-                      onPressed: _loading ? null : _submit,
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        backgroundColor: const Color(0xFFFF6F61),
-                      ),
-                      child: _loading
-                          ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : const Text('로그인'),
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: AppColors.card,
+                      borderRadius: BorderRadius.circular(AppDimens.customerCardRadius),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.08),
+                          blurRadius: 12,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        TextField(
+                          controller: _idController,
+                          focusNode: _idFocus,
+                          style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
+                          decoration: InputDecoration(
+                            labelText: '아이디',
+                            hintText: '아이디 입력',
+                            hintStyle: TextStyle(color: AppColors.textSecondary),
+                            labelStyle: TextStyle(color: AppColors.textSecondary),
+                            errorText: _idError,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(AppDimens.inputRadius),
+                              borderSide: const BorderSide(color: AppColors.border),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(AppDimens.inputRadius),
+                              borderSide: const BorderSide(color: AppColors.border),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(AppDimens.inputRadius),
+                              borderSide: const BorderSide(color: AppColors.customerRed, width: 1.5),
+                            ),
+                            filled: true,
+                            fillColor: AppColors.card,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          ),
+                          textInputAction: TextInputAction.next,
+                          onSubmitted: (_) => _pwFocus.requestFocus(),
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: _pwController,
+                          focusNode: _pwFocus,
+                          obscureText: true,
+                          style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
+                          decoration: InputDecoration(
+                            labelText: '비밀번호',
+                            hintText: '비밀번호 입력',
+                            hintStyle: TextStyle(color: AppColors.textSecondary),
+                            labelStyle: TextStyle(color: AppColors.textSecondary),
+                            errorText: _pwError,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(AppDimens.inputRadius),
+                              borderSide: const BorderSide(color: AppColors.border),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(AppDimens.inputRadius),
+                              borderSide: const BorderSide(color: AppColors.border),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(AppDimens.inputRadius),
+                              borderSide: const BorderSide(color: AppColors.customerRed, width: 1.5),
+                            ),
+                            filled: true,
+                            fillColor: AppColors.card,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          ),
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) => _submit(),
+                        ),
+                        const SizedBox(height: 24),
+                        SizedBox(
+                          height: 48,
+                          child: FilledButton(
+                            onPressed: _loading ? null : _submit,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppColors.customerRed,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(AppDimens.filterPillRadius),
+                              ),
+                              elevation: 0,
+                            ),
+                            child: _loading
+                                ? const SizedBox(
+                                    height: 22,
+                                    width: 22,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  )
+                                : const Text('로그인', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
                   TextButton(
                     onPressed: () => context.go('/admin-login'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.textSecondary,
+                    ),
                     child: const Text('관리자 페이지'),
                   ),
                 ],

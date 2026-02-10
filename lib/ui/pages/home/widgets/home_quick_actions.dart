@@ -18,9 +18,15 @@ class HomeQuickActions extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          '빠른 실행',
-          style: AppTextStyles.sectionTitleLarge,
+        Row(
+          children: [
+            Icon(Icons.flash_on, size: 20, color: AppColors.primary),
+            const SizedBox(width: 8),
+            Text(
+              '빠른 실행',
+              style: AppTextStyles.sectionTitle,
+            ),
+          ],
         ),
         const SizedBox(height: 16),
         GridView.count(

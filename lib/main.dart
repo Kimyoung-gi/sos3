@@ -49,6 +49,8 @@ import 'ui/pages/admin_home_page.dart';
 import 'ui/pages/customer_register_page.dart';
 import 'ui/pages/customer_list_page.dart';
 import 'ui/pages/home/home_page.dart';
+import 'ui/theme/app_colors.dart';
+import 'ui/theme/app_dimens.dart';
 import 'ui/widgets/custom_bottom_nav.dart';
 import 'ui/widgets/frame_shell.dart';
 
@@ -299,6 +301,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     super.initState();
     _currentIndex = widget.initialTab;
     _loadFavorites();
+  }
+
+  @override
+  void didUpdateWidget(MainNavigationScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialTab != widget.initialTab) {
+      setState(() {
+        _currentIndex = widget.initialTab;
+      });
+    }
   }
   
   @override
@@ -1127,15 +1139,13 @@ class _CustomerListByHqScreenState extends State<CustomerListByHqScreen> {
                         controller: _searchController,
                         keyboardType: TextInputType.text,
                         enableInteractiveSelection: true,
-                        style: const TextStyle(color: Color(0xFF1A1A1A)),
+                        style: TextStyle(color: AppColors.textSecondary),
                         decoration: InputDecoration(
                           hintText: '고객사명, 실판매자 검색',
-                          hintStyle: TextStyle(
-                            color: Colors.grey[400],
-                          ),
+                          hintStyle: TextStyle(color: AppColors.textSecondary),
                           prefixIcon: Icon(
                             Icons.search,
-                            color: Colors.grey[400],
+                            color: AppColors.textSecondary,
                           ),
                           border: InputBorder.none,
                           contentPadding: const EdgeInsets.symmetric(
@@ -1736,15 +1746,13 @@ class _CustomerListScreenState extends State<CustomerListScreen> {
                         controller: _searchController,
                         keyboardType: TextInputType.text,
                         enableInteractiveSelection: true,
-                        style: const TextStyle(color: Color(0xFF1A1A1A)),
+                        style: TextStyle(color: AppColors.textSecondary),
                         decoration: InputDecoration(
                           hintText: '고객사명, 실판매자, 본부 검색',
-                          hintStyle: TextStyle(
-                            color: Colors.grey[400],
-                          ),
+                          hintStyle: TextStyle(color: AppColors.textSecondary),
                           prefixIcon: Icon(
                             Icons.search,
-                            color: Colors.grey[400],
+                            color: AppColors.textSecondary,
                           ),
                           border: InputBorder.none,
                           contentPadding: const EdgeInsets.symmetric(
@@ -3090,9 +3098,12 @@ class _FrontierHqSelectionScreenState extends State<FrontierHqSelectionScreen> {
       filtered = filtered.where((f) => f.name.toLowerCase().contains(q)).toList();
     }
 
-    // 본부 필터
+    // 본부 필터 (고객사와 동일: 본부명 앞 2글자 매칭)
     if (_selectedHq != null && _selectedHq != '전체') {
-      filtered = filtered.where((f) => f.hq == _selectedHq).toList();
+      filtered = filtered.where((f) {
+        final hqPrefix = f.hq.length >= 2 ? f.hq.substring(0, 2) : f.hq;
+        return hqPrefix == _selectedHq;
+      }).toList();
     }
     
     setState(() {
@@ -3103,9 +3114,9 @@ class _FrontierHqSelectionScreenState extends State<FrontierHqSelectionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: AppColors.card,
         elevation: 1,
         automaticallyImplyLeading: false,
         title: Padding(
@@ -3121,72 +3132,78 @@ class _FrontierHqSelectionScreenState extends State<FrontierHqSelectionScreen> {
       ),
       body: Column(
         children: [
-          // 이름 검색
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: Colors.white,
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: '이름 검색',
-                prefixIcon: const Icon(Icons.search, color: Colors.grey),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.grey[300]!),
+          // 검색바 (고객사 메뉴와 동일 스타일)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(AppDimens.pagePadding, 12, AppDimens.pagePadding, 8),
+            child: Container(
+              height: AppDimens.searchBarHeight,
+              decoration: BoxDecoration(
+                color: AppColors.card,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: TextField(
+                controller: _searchController,
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 15),
+                decoration: InputDecoration(
+                  hintText: '이름 검색',
+                  hintStyle: TextStyle(color: AppColors.textSecondary),
+                  prefixIcon: Icon(Icons.search, color: AppColors.textSecondary, size: 22),
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.grey[300]!),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFFF6F61), width: 2),
-                ),
-                filled: true,
-                fillColor: Colors.grey[50],
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               ),
             ),
           ),
-          // 본부 필터 Chips
-          Container(
-            height: 56,
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            color: Colors.white,
+          // 본부 필터 Pills (고객사 메뉴와 동일: 전체 | 강북 | 강남 | 강서 | 동부 | 서부)
+          SizedBox(
+            height: 44,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: AppDimens.pagePadding),
               itemCount: _hqList.length,
               itemBuilder: (context, index) {
                 final hq = _hqList[index];
                 final isSelected = (hq == '전체' && _selectedHq == null) || _selectedHq == hq;
-                
                 return Padding(
                   padding: const EdgeInsets.only(right: 8),
-                  child: FilterChip(
-                    label: Text(hq),
-                    selected: isSelected,
-                    onSelected: (selected) {
-                      setState(() {
-                        _selectedHq = hq == '전체' ? null : hq;
-                      });
-                      _applyFilters();
-                    },
-                    selectedColor: const Color(0xFFFF6F61).withOpacity(0.2),
-                    checkmarkColor: const Color(0xFFFF6F61),
-                    labelStyle: TextStyle(
-                      color: isSelected ? const Color(0xFFFF6F61) : Colors.grey[700],
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                    ),
-                    side: BorderSide(
-                      color: isSelected ? const Color(0xFFFF6F61) : Colors.grey[300]!,
-                      width: isSelected ? 1.5 : 1,
+                  child: Material(
+                    color: isSelected ? AppColors.pillSelectedBg : AppColors.pillUnselectedBg,
+                    borderRadius: BorderRadius.circular(AppDimens.filterPillRadius),
+                    child: InkWell(
+                      onTap: () {
+                        setState(() {
+                          _selectedHq = hq == '전체' ? null : hq;
+                        });
+                        _applyFilters();
+                      },
+                      borderRadius: BorderRadius.circular(AppDimens.filterPillRadius),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        child: Center(
+                          child: Text(
+                            hq,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: isSelected ? Colors.white : AppColors.pillUnselectedText,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 );
               },
             ),
           ),
+          const SizedBox(height: 12),
           // 프론티어 리스트
           Expanded(
             child: _isLoading
@@ -3218,11 +3235,14 @@ class _FrontierHqSelectionScreenState extends State<FrontierHqSelectionScreen> {
                         ? Center(
                             child: Text(
                               '프론티어가 없습니다',
-                              style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                              style: TextStyle(color: AppColors.textSecondary, fontSize: 16),
                             ),
                           )
                         : ListView.builder(
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppDimens.pagePadding,
+                              vertical: 8,
+                            ),
                             itemCount: _filteredFrontiers.length,
                             itemBuilder: (context, index) {
                               final frontier = _filteredFrontiers[index];
@@ -3920,18 +3940,17 @@ class _FrontierListByCenterScreenState extends State<FrontierListByCenterScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         centerTitle: true,
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        elevation: 0,
+        backgroundColor: AppColors.card,
+        elevation: 1,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: GestureDetector(
           onTap: () {
-            // 첫 화면으로 이동 (모든 스택 제거)
             Navigator.of(context).pushAndRemoveUntil(
               MaterialPageRoute(builder: (context) => const MainNavigationScreen()),
               (route) => false,
@@ -3939,8 +3958,7 @@ class _FrontierListByCenterScreenState extends State<FrontierListByCenterScreen>
           },
           child: Image.asset(
             'assets/images/sos_logo.png',
-            // [FIX] 이미지 비율 유지 및 찌그러짐 방지
-            height: 28, // height만 지정하여 원본 비율 유지
+            height: 28,
             fit: BoxFit.contain,
             filterQuality: FilterQuality.high,
             gaplessPlayback: true,
@@ -3964,62 +3982,39 @@ class _FrontierListByCenterScreenState extends State<FrontierListByCenterScreen>
       body: SafeArea(
         child: Column(
           children: [
-            // 검색 영역
+            // 검색 영역 (시안: 화이트, radius 14, 그림자, 높이 50, 좌 검색 우 필터)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(18),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: TextField(
-                        controller: _searchController,
-                        keyboardType: TextInputType.text,
-                        enableInteractiveSelection: true,
-                        style: const TextStyle(color: Color(0xFF1A1A1A)),
-                        decoration: InputDecoration(
-                          hintText: '성명, 본부, 센터 검색',
-                          hintStyle: TextStyle(color: Colors.grey[400]),
-                          prefixIcon: Icon(Icons.search, color: Colors.grey[400]),
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                        ),
-                      ),
+              padding: const EdgeInsets.fromLTRB(AppDimens.pagePadding, 12, AppDimens.pagePadding, 8),
+              child: Container(
+                height: AppDimens.searchBarHeight,
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.08),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: IconButton(
-                      icon: const Icon(Icons.tune),
-                      color: Colors.grey[700],
+                  ],
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  keyboardType: TextInputType.text,
+                  enableInteractiveSelection: true,
+                  style: TextStyle(color: AppColors.textSecondary),
+                  decoration: InputDecoration(
+                    hintText: '성명, 본부, 센터 검색',
+                    hintStyle: TextStyle(color: AppColors.textSecondary),
+                    prefixIcon: Icon(Icons.search, color: AppColors.textSecondary, size: 22),
+                    suffixIcon: IconButton(
+                      icon: Icon(Icons.tune, color: AppColors.textSecondary, size: 22),
                       onPressed: _showFilterDialog,
                     ),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   ),
-                ],
+                ),
               ),
             ),
             // 필터 표시
@@ -4087,7 +4082,10 @@ class _FrontierListByCenterScreenState extends State<FrontierListByCenterScreen>
                               ),
                             )
                           : ListView.builder(
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppDimens.pagePadding,
+                                vertical: 8,
+                              ),
                               itemCount: _filteredFrontiers.length,
                               itemBuilder: (context, index) {
                                 final frontier = _filteredFrontiers[index];
@@ -4734,15 +4732,13 @@ class _FrontierScreenState extends State<FrontierScreen> {
                         controller: _searchController,
                         keyboardType: TextInputType.text,
                         enableInteractiveSelection: true,
-                        style: const TextStyle(color: Color(0xFF1A1A1A)),
+                        style: TextStyle(color: AppColors.textSecondary),
                         decoration: InputDecoration(
                           hintText: '성명, 본부, 센터 검색',
-                          hintStyle: TextStyle(
-                            color: Colors.grey[400],
-                          ),
+                          hintStyle: TextStyle(color: AppColors.textSecondary),
                           prefixIcon: Icon(
                             Icons.search,
-                            color: Colors.grey[400],
+                            color: AppColors.textSecondary,
                           ),
                           border: InputBorder.none,
                           contentPadding: const EdgeInsets.symmetric(
@@ -4913,7 +4909,6 @@ class _FrontierCard extends StatelessWidget {
     required this.onTap,
   });
 
-  // 등급 색상
   Color _getGradeColor(String grade) {
     if (grade.isEmpty) return Colors.grey;
     final firstChar = grade[0].toUpperCase();
@@ -4931,95 +4926,93 @@ class _FrontierCard extends StatelessWidget {
     }
   }
 
-  // 본부 앞 2글자
-  String _getHqShort() {
-    return frontier.hq.length >= 2 ? frontier.hq.substring(0, 2) : frontier.hq;
-  }
-
-  // 센터 앞 2글자
-  String _getCenterShort() {
-    return frontier.center.length >= 2
-        ? frontier.center.substring(0, 2)
-        : frontier.center;
-  }
-
   @override
   Widget build(BuildContext context) {
     final gradeColor = _getGradeColor(frontier.grade);
     final gradeText = frontier.grade.isNotEmpty ? frontier.grade : '-';
 
                   return Container(
-                    margin: const EdgeInsets.only(bottom: 12),
+                    margin: const EdgeInsets.only(bottom: AppDimens.cardSpacing),
                     decoration: BoxDecoration(
-                      color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+                      color: AppColors.card,
+                      borderRadius: BorderRadius.circular(AppDimens.customerCardRadius),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 8,
+                          color: Colors.black.withOpacity(0.08),
+                          blurRadius: 12,
                           offset: const Offset(0, 2),
                         ),
                       ],
                     ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(20),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                // 1행: 이름(좌) + 등급 배지(우)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        frontier.position.isNotEmpty 
-                            ? '${frontier.name} ${frontier.position}'
-                            : frontier.name,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1A1A1A),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: onTap,
+                        borderRadius: BorderRadius.circular(AppDimens.customerCardRadius),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.person_outline, size: 15, color: AppColors.textSecondary),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      frontier.position.isNotEmpty
+                                          ? '${frontier.name} ${frontier.position}'
+                                          : frontier.name,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.textPrimary,
+                                        height: 1.2,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: gradeColor.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(AppDimens.filterPillRadius),
+                                    ),
+                                    child: Text(
+                                      gradeText,
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        color: gradeColor,
+                                        height: 1.0,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 1),
+                              Padding(
+                                padding: const EdgeInsets.only(left: 19),
+                                child: Text(
+                                  '${frontier.hq} / ${frontier.center}',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.textSecondary,
+                                    height: 1.2,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                          Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                        color: gradeColor.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                              child: Text(
-                        gradeText,
-                                style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: gradeColor,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                // 2행: 본부/센터 요약 라인
-                Text(
-                  '${_getHqShort()} / ${_getCenterShort()} 프론티어',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+                  );
   }
 }
 
@@ -5785,61 +5778,55 @@ class _FrontierDetailScreenState extends State<FrontierDetailScreen>
       padding: const EdgeInsets.all(20),
       child: Column(
         children: [
-          // 실적현황 타이틀 및 기간 선택
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
+          // 실적현황 타이틀 및 기간 선택 (전체/강북/... pill 스타일)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(
+                '실적현황',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
                 ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    '실적현황',
-                    style: TextStyle(
-                      fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                      color: Color(0xFF1A1A1A),
-                    ),
-                  ),
-                  Row(
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: ['3개월', '6개월', '1년'].map((period) {
                       final isSelected = _selectedPeriod == period;
                       return Padding(
-                        padding: const EdgeInsets.only(left: 8),
-                        child: ChoiceChip(
-                          label: Text(period),
-                          selected: isSelected,
-                          onSelected: (selected) {
-                            if (selected) {
-                              setState(() {
-                                _selectedPeriod = period;
-                              });
-                            }
-                          },
-                          selectedColor: const Color(0xFFFF6F61).withOpacity(0.2),
-                          labelStyle: TextStyle(
-                            color: isSelected
-                                      ? const Color(0xFFFF6F61)
-                                : Colors.grey[700],
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Material(
+                          color: isSelected ? AppColors.pillSelectedBg : AppColors.pillUnselectedBg,
+                          borderRadius: BorderRadius.circular(AppDimens.filterPillRadius),
+                          child: InkWell(
+                            onTap: () => setState(() => _selectedPeriod = period),
+                            borderRadius: BorderRadius.circular(AppDimens.filterPillRadius),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                              child: Center(
+                                child: Text(
+                                  period,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: isSelected ? Colors.white : AppColors.pillUnselectedText,
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       );
                     }).toList(),
                   ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
           const SizedBox(height: 16),
           // 요약 박스 2개
@@ -5948,143 +5935,141 @@ class _FrontierDetailScreenState extends State<FrontierDetailScreen>
       }
     }
 
-    return Column(
-      children: [
-        // 첫 번째 박스: 가장 최근월 실적
-        Container(
-          margin: const EdgeInsets.only(bottom: 16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  latestYearMonthStr != null ? '$latestYearMonthStr 실적' : '최근월 실적',
-                              style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                                color: Color(0xFF1A1A1A),
-                              ),
-                            ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: categories.map((cat) {
-                    final actual = latestMonthActuals[cat] ?? 0;
-                    return Container(
-                      width: (MediaQuery.of(context).size.width - 100) / 2,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF7F8FA),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            actual.toString(),
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF1A1A1A),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '$cat건',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ],
+    // 카드 스타일: 아이콘(연한 배경) + 라벨(회색) + 숫자(강조색) — 2x2 그리드
+    (String label, IconData icon, Color iconBg, Color valueColor) _style(String cat) {
+      switch (cat) {
+        case '무선':
+          return ('무선', Icons.smartphone, const Color(0xFFE3F2FD), const Color(0xFF1976D2));
+        case '유선순신규':
+          return ('유선순신규', Icons.add_circle_outline, const Color(0xFFE8F5E9), const Color(0xFF2E7D32));
+        case '유선약정갱신':
+          return ('유선약정갱신', Icons.refresh, const Color(0xFFFFF3E0), const Color(0xFFE65100));
+        case '기타상품':
+          return ('기타상품', Icons.category_outlined, const Color(0xFFF3E5F5), const Color(0xFF7B1FA2));
+        default:
+          return (cat, Icons.bar_chart, AppColors.pillUnselectedBg, AppColors.textPrimary);
+      }
+    }
+
+    Widget _metricCard({required String label, required IconData icon, required Color iconBg, required Color valueColor, required String value}) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.border.withOpacity(0.8), width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
             ),
-          ),
+          ],
         ),
-        // 두 번째 박스: 선택 기간 누적 실적
-        Container(
-          margin: const EdgeInsets.only(bottom: 16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
               children: [
-                Text(
-                  '최근 $_selectedPeriod 누적',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1A1A1A),
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: iconBg,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, size: 22, color: valueColor),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: categories.map((cat) {
-                    final total = recentMonthsActuals[cat] ?? 0;
-                    return Container(
-                      width: (MediaQuery.of(context).size.width - 100) / 2,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF7F8FA),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            total.toString(),
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF1A1A1A),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '$cat건',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ),
               ],
             ),
+            const SizedBox(height: 12),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: valueColor,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 한 열: 1) 해당월 실적 2x2, 2) 최근 N개월 누적 2x2
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          latestYearMonthStr != null ? '$latestYearMonthStr 실적' : '최근월 실적',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textPrimary,
           ),
+        ),
+        const SizedBox(height: 12),
+        GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 2,
+          mainAxisSpacing: 10,
+          crossAxisSpacing: 10,
+          childAspectRatio: 1.35,
+          children: categories.map((cat) {
+            final actual = latestMonthActuals[cat] ?? 0;
+            final s = _style(cat);
+            return _metricCard(
+              label: s.$1,
+              icon: s.$2,
+              iconBg: s.$3,
+              valueColor: s.$4,
+              value: '$actual건',
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 20),
+        Text(
+          '최근 $_selectedPeriod 누적',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 12),
+        GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 2,
+          mainAxisSpacing: 10,
+          crossAxisSpacing: 10,
+          childAspectRatio: 1.35,
+          children: categories.map((cat) {
+            final total = recentMonthsActuals[cat] ?? 0;
+            final s = _style(cat);
+            return _metricCard(
+              label: s.$1,
+              icon: s.$2,
+              iconBg: s.$3,
+              valueColor: s.$4,
+              value: '$total건',
+            );
+          }).toList(),
         ),
       ],
     );
