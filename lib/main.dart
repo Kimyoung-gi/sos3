@@ -49,6 +49,7 @@ import 'ui/pages/admin_login_page.dart';
 import 'ui/pages/admin_home_page.dart';
 import 'ui/pages/customer_register_page.dart';
 import 'ui/pages/customer_list_page.dart';
+import 'ui/pages/od_list_page.dart';
 import 'ui/pages/home/home_page.dart';
 import 'ui/theme/app_colors.dart';
 import 'ui/theme/app_dimens.dart';
@@ -245,7 +246,7 @@ GoRouter createRouter(AuthService authService) {
               final intent = context.read<MoreNavIntent>();
               final pending = intent.pendingRoute;
               return MainNavigationScreen(
-                initialTab: pending != null ? 4 : 0,
+                initialTab: pending != null ? 5 : 0,
                 pendingMoreRoute: pending,
                 onClearPendingRoute: intent.clear,
               );
@@ -258,7 +259,7 @@ GoRouter createRouter(AuthService authService) {
               final intent = context.read<MoreNavIntent>();
               final pending = intent.pendingRoute;
               return MainNavigationScreen(
-                initialTab: pending != null ? 4 : (int.tryParse(tab) ?? 0),
+                initialTab: pending != null ? 5 : (int.tryParse(tab) ?? 0),
                 pendingMoreRoute: pending,
                 onClearPendingRoute: intent.clear,
               );
@@ -365,10 +366,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   void _syncWithUrl() {
     final router = GoRouter.of(context);
     final location = router.routerDelegate.currentConfiguration.uri.path;
-    if (location.startsWith('/main/')) {
+      if (location.startsWith('/main/')) {
       final tabStr = location.split('/').last;
       final tab = int.tryParse(tabStr);
-      if (tab != null && tab >= 0 && tab <= 4 && tab != _currentIndex) {
+      if (tab != null && tab >= 0 && tab <= 5 && tab != _currentIndex) {
         setState(() {
           _currentIndex = tab;
         });
@@ -432,6 +433,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           CustomerListPage(), // 고객사
           FrontierHqSelectionScreen(), // 프론티어
           DashboardScreen(), // 대시보드
+          const OdListPage(), // OD
           MoreScreen(
             navigatorKey: _moreNavigatorKey,
             pendingRoute: widget.pendingMoreRoute,
@@ -443,7 +445,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         currentIndex: _currentIndex,
         onTap: (index) {
           // [MORE] 더보기 탭 누르면 무조건 더보기 메뉴(첫 화면)만 표시
-          if (index == 4) {
+          if (index == 5) {
             _moreNavigatorKey.currentState?.popUntil((route) => route.isFirst);
           }
           setState(() {
@@ -462,7 +464,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                     MaterialPageRoute(
                       builder: (context) => const CustomerRegisterPage(),
                     ),
-                  );
+                  ).then((result) {
+                    if (result == true) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        CsvReloadBus().reload('customerlist.csv');
+                      });
+                    }
+                  });
                 },
                 icon: const Icon(Icons.add, size: 18),
                 label: const Text(
@@ -523,12 +531,15 @@ class SalesActivityItem {
   final String text;
   final DateTime createdAt;
   final DateTime? updatedAt;
+  /// 메모 기입자 표시: "이름(본부)"
+  final String? writer;
 
   SalesActivityItem({
     required this.id,
     required this.text,
     required this.createdAt,
     this.updatedAt,
+    this.writer,
   });
 
   Map<String, dynamic> toJson() => {
@@ -536,6 +547,7 @@ class SalesActivityItem {
         'text': text,
         'createdAt': createdAt.toIso8601String(),
         'updatedAt': updatedAt?.toIso8601String(),
+        'writer': writer,
       };
 
   static SalesActivityItem fromJson(Map<String, dynamic> j) {
@@ -544,6 +556,7 @@ class SalesActivityItem {
       text: j['text'] as String? ?? '',
       createdAt: _parseDateTime(j['createdAt']),
       updatedAt: j['updatedAt'] != null ? _parseDateTime(j['updatedAt']) : null,
+      writer: j['writer'] as String?,
     );
   }
 
@@ -553,12 +566,13 @@ class SalesActivityItem {
     return DateTime.now();
   }
 
-  SalesActivityItem copyWith({String? id, String? text, DateTime? createdAt, DateTime? updatedAt}) =>
+  SalesActivityItem copyWith({String? id, String? text, DateTime? createdAt, DateTime? updatedAt, String? writer}) =>
       SalesActivityItem(
         id: id ?? this.id,
         text: text ?? this.text,
         createdAt: createdAt ?? this.createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
+        writer: writer ?? this.writer,
       );
 }
 
@@ -2278,6 +2292,14 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
     }
   }
 
+  String get _writerLabel {
+    final user = context.read<AuthService>().currentUser;
+    if (user == null) return '';
+    final name = user.name.isNotEmpty ? user.name : user.id;
+    final hq = user.hq.isNotEmpty ? user.hq : '';
+    return hq.isNotEmpty ? '$name($hq)' : name;
+  }
+
   void _onAddActivity(String text) {
     if (text.trim().isEmpty) return;
     setState(() {
@@ -2288,6 +2310,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
           text: text.trim(),
           createdAt: DateTime.now(),
           updatedAt: null,
+          writer: _writerLabel.isNotEmpty ? _writerLabel : null,
         ),
       );
       _isDirty = true;
@@ -2299,7 +2322,11 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
     setState(() {
       final now = DateTime.now();
       _activitiesDraft = _activitiesDraft.map((a) {
-        if (a.id == id) return a.copyWith(text: text.trim(), updatedAt: now);
+        if (a.id == id) return a.copyWith(
+          text: text.trim(),
+          updatedAt: now,
+          writer: _writerLabel.isNotEmpty ? _writerLabel : null,
+        );
         return a;
       }).toList();
       _isDirty = true;
@@ -2883,12 +2910,30 @@ class _ActivityCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  formatDateTime(displayTime),
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
+                Row(
+                  children: [
+                    Text(
+                      formatDateTime(displayTime),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    if (item.writer != null && item.writer!.isNotEmpty) ...[
+                      Text(
+                        ' · ',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                      Text(
+                        item.writer!,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 6),
                 Text(
@@ -3174,16 +3219,26 @@ class _FrontierHqSelectionScreenState extends State<FrontierHqSelectionScreen> {
         backgroundColor: AppColors.card,
         elevation: 1,
         automaticallyImplyLeading: false,
-        title: Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: Image.asset(
-            'assets/images/sos_logo.png',
-            height: 28,
-            fit: BoxFit.contain,
-            filterQuality: FilterQuality.high,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.groups_rounded, color: AppColors.textPrimary, size: 20),
+              const SizedBox(width: 6),
+              Text('프론티어', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+            ],
           ),
         ),
+        leadingWidth: 95,
         centerTitle: true,
+        title: Image.asset(
+          'assets/images/sos_logo.png',
+          height: 28,
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+        ),
+        actions: const [SizedBox(width: 95)],
       ),
       body: Column(
         children: [
@@ -3301,81 +3356,162 @@ class _FrontierHqSelectionScreenState extends State<FrontierHqSelectionScreen> {
                             itemCount: displayedFrontiers.length,
                             itemBuilder: (context, index) {
                               final frontier = displayedFrontiers[index];
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 12),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(20),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.05),
-                                      blurRadius: 8,
-                                      offset: const Offset(0, 2),
+                              return _KTStyleFrontierCard(
+                                frontier: frontier,
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => FrontierDetailScreen(frontier: frontier),
                                     ),
-                                  ],
-                                ),
-                                child: Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) => FrontierDetailScreen(frontier: frontier),
-                                        ),
-                                      );
-                                    },
-                                    borderRadius: BorderRadius.circular(20),
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(20),
-                                      child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  frontier.name,
-                                                  style: const TextStyle(
-                                                    fontSize: 18,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: Color(0xFF1A1A1A),
-                                                  ),
-                                                ),
-                                                if (frontier.position.isNotEmpty)
-                                                  Text(
-                                                    frontier.position,
-                                                    style: TextStyle(
-                                                      fontSize: 14,
-                                                      color: Colors.grey[600],
-                                                    ),
-                                                  ),
-                                                if (frontier.center.isNotEmpty)
-                                                  Text(
-                                                    '${frontier.hq} / ${frontier.center}',
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      color: Colors.grey[500],
-                                                    ),
-                                                  ),
-                                              ],
-                                            ),
-                                          ),
-                                          const Icon(
-                                            Icons.chevron_right,
-                                            color: Color(0xFFFF6F61),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
+                                  );
+                                },
                               );
                             },
                           ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// KT 느낌 기업형 프론티어 카드 (이름 앞 사람 아이콘, 슬림·단정)
+class _KTStyleFrontierCard extends StatelessWidget {
+  final FrontierData frontier;
+  final VoidCallback onTap;
+
+  const _KTStyleFrontierCard({
+    required this.frontier,
+    required this.onTap,
+  });
+
+  Color _getGradeColor(String grade) {
+    if (grade.isEmpty) return Colors.grey;
+    final firstChar = grade[0].toUpperCase();
+    switch (firstChar) {
+      case 'A': return Colors.green;
+      case 'B': return Colors.blue;
+      case 'C': return Colors.grey;
+      case 'D': return Colors.orange;
+      default: return Colors.orange;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gradeColor = _getGradeColor(frontier.grade);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: Colors.grey[300]!, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(13),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF6F61).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.person_outline,
+                    color: Color(0xFFFF6F61),
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        frontier.name,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      if (frontier.position.isNotEmpty)
+                        Text(
+                          frontier.position,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w400,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      if (frontier.position.isNotEmpty) const SizedBox(height: 2),
+                      Text(
+                        frontier.center.isNotEmpty
+                            ? '${frontier.hq} / ${frontier.center}'
+                            : (frontier.hq.isNotEmpty ? frontier.hq : '-'),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w400,
+                          color: Colors.grey[500],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (frontier.grade.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: gradeColor.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      frontier.grade,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: gradeColor,
+                      ),
+                    ),
+                  ),
+                if (frontier.grade.isNotEmpty) const SizedBox(width: 8),
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: onTap,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                      child: Icon(
+                        Icons.chevron_right,
+                        size: 22,
+                        color: Colors.grey[500],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -4144,7 +4280,7 @@ class _FrontierListByCenterScreenState extends State<FrontierListByCenterScreen>
                               itemCount: _filteredFrontiers.length,
                               itemBuilder: (context, index) {
                                 final frontier = _filteredFrontiers[index];
-                                return _FrontierCard(
+                                return _KTStyleFrontierCard(
                                   frontier: frontier,
                                   onTap: () {
                                     Navigator.push(
@@ -4932,7 +5068,7 @@ class _FrontierScreenState extends State<FrontierScreen> {
                               itemCount: _filteredFrontiers.length,
                 itemBuilder: (context, index) {
                                 final frontier = _filteredFrontiers[index];
-                                return _FrontierCard(
+                                return _KTStyleFrontierCard(
                                   frontier: frontier,
                                   onTap: () {
                                     Navigator.push(
@@ -4951,123 +5087,6 @@ class _FrontierScreenState extends State<FrontierScreen> {
         ),
       ),
     );
-  }
-}
-
-// 프론티어 카드 위젯
-class _FrontierCard extends StatelessWidget {
-  final FrontierData frontier;
-  final VoidCallback onTap;
-
-  const _FrontierCard({
-    required this.frontier,
-    required this.onTap,
-  });
-
-  Color _getGradeColor(String grade) {
-    if (grade.isEmpty) return Colors.grey;
-    final firstChar = grade[0].toUpperCase();
-    switch (firstChar) {
-      case 'A':
-        return Colors.green;
-      case 'B':
-        return Colors.blue;
-      case 'C':
-        return Colors.grey;
-      case 'D':
-        return Colors.orange;
-      default:
-        return Colors.orange;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final gradeColor = _getGradeColor(frontier.grade);
-    final gradeText = frontier.grade.isNotEmpty ? frontier.grade : '-';
-
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: AppDimens.cardSpacing),
-                    decoration: BoxDecoration(
-                      color: AppColors.card,
-                      borderRadius: BorderRadius.circular(AppDimens.customerCardRadius),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.08),
-                          blurRadius: 12,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: onTap,
-                        borderRadius: BorderRadius.circular(AppDimens.customerCardRadius),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.person_outline, size: 15, color: AppColors.textSecondary),
-                                  const SizedBox(width: 4),
-                                  Expanded(
-                                    child: Text(
-                                      frontier.position.isNotEmpty
-                                          ? '${frontier.name} ${frontier.position}'
-                                          : frontier.name,
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.bold,
-                                        color: AppColors.textPrimary,
-                                        height: 1.2,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: gradeColor.withOpacity(0.15),
-                                      borderRadius: BorderRadius.circular(AppDimens.filterPillRadius),
-                                    ),
-                                    child: Text(
-                                      gradeText,
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
-                                        color: gradeColor,
-                                        height: 1.0,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 1),
-                              Padding(
-                                padding: const EdgeInsets.only(left: 19),
-                                child: Text(
-                                  '${frontier.hq} / ${frontier.center}',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: AppColors.textSecondary,
-                                    height: 1.2,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
   }
 }
 
@@ -7206,16 +7225,26 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
         backgroundColor: Colors.white,
         elevation: 1,
         automaticallyImplyLeading: false,
-        title: Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: Image.asset(
-            'assets/images/sos_logo.png',
-            height: 28,
-            fit: BoxFit.contain,
-            filterQuality: FilterQuality.high,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.dashboard_rounded, color: AppColors.textPrimary, size: 20),
+              const SizedBox(width: 6),
+              Text('대시보드', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+            ],
           ),
         ),
+        leadingWidth: 105,
         centerTitle: true,
+        title: Image.asset(
+          'assets/images/sos_logo.png',
+          height: 28,
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+        ),
+        actions: const [SizedBox(width: 105)],
       ),
       body: SafeArea(
         child: Column(
@@ -9544,79 +9573,99 @@ class _MoreMenuContent extends StatelessWidget {
       body: SafeArea(
         child: Column(
           children: [
-            // 상단 타이틀
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 16, 20, 12),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '더보기',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1A1A1A),
+            // 상단: 좌측 아이콘+메뉴명(작게), 정가운데 로고
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
+              child: Row(
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.more_horiz_rounded, color: AppColors.textPrimary, size: 20),
+                      const SizedBox(width: 6),
+                      Text(
+                        '더보기',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Center(
+                      child: Image.asset(
+                        'assets/images/sos_logo.png',
+                        height: 28,
+                        fit: BoxFit.contain,
+                        filterQuality: FilterQuality.high,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 90),
+                ],
               ),
             ),
-            // 사용자 정보 표시
+            // [계정 영역] 내 아이디 정보 — 메뉴와 구분된 표현
             if (currentUser != null)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFF6F61).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.person,
-                          color: Color(0xFFFF6F61),
-                          size: 24,
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4, bottom: 8),
+                      child: Text(
+                        '내 계정',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[600],
+                          letterSpacing: 0.5,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              currentUser.name,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF1A1A1A),
-                              ),
+                    ),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey[200]!),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.person_outline, size: 20, color: Colors.grey[600]),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  currentUser.name,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF1A1A1A),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${currentUser.id} · ${currentUser.roleLabel} · ${currentUser.scopeLabel}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${currentUser.id} (${currentUser.roleLabel} / ${currentUser.scopeLabel})',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             // 더보기 메뉴 리스트
@@ -9651,37 +9700,12 @@ class _MoreMenuContent extends StatelessWidget {
                     const SizedBox(height: 16),
                     _MoreCardButton(
                       title: 'OD',
-                      icon: Icons.language,
-                      onTap: () async {
-                        const odUrl = 'https://kimyoung-gi.github.io/11/';
-                        try {
-                          final uri = Uri.parse(odUrl);
-                          if (kIsWeb) {
-                            await launchUrl(
-                              uri,
-                              mode: LaunchMode.externalApplication,
-                              webOnlyWindowName: '_blank',
-                            );
-                          } else {
-                            if (await canLaunchUrl(uri)) {
-                              await launchUrl(uri, mode: LaunchMode.externalApplication);
-                            }
-                          }
-                        } catch (e) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('브라우저에서 열 수 없습니다'),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          }
-                        }
-                      },
+                      icon: Icons.work_outline,
+                      onTap: () => context.go('/main/4'),
                     ),
                     // 관리자 페이지 이동 버튼 (Admin만 표시)
                     if (authService.isAdmin) ...[
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 16),
                       _MoreCardButton(
                         title: '관리자 페이지',
                         icon: Icons.admin_panel_settings,
@@ -9691,41 +9715,58 @@ class _MoreMenuContent extends StatelessWidget {
                       ),
                     ],
                     const SizedBox(height: 24),
-                    // 로그아웃 버튼
-                    _MoreCardButton(
-                      title: '로그아웃',
-                      icon: Icons.logout,
-                      onTap: () async {
-                        final confirm = await showDialog<bool>(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: const Text('로그아웃'),
-                            content: const Text('로그아웃하시겠습니까?'),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.of(ctx).pop(false),
-                                child: const Text('취소'),
-                              ),
-                              FilledButton(
-                                onPressed: () => Navigator.of(ctx).pop(true),
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: const Color(0xFFFF6F61),
-                                ),
-                                child: const Text('로그아웃'),
-                              ),
-                            ],
-                          ),
-                        );
-                        if (confirm == true && context.mounted) {
-                          await authService.logout();
-                          if (context.mounted) {
-                            context.go('/login');
-                          }
-                        }
-                      },
-                      isDestructive: true,
-                    ),
                   ],
+                ),
+              ),
+            ),
+            // [계정 영역] 로그아웃 — 메뉴와 구분된 하단 고정
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+              decoration: BoxDecoration(
+                color: Theme.of(context).scaffoldBackgroundColor,
+                border: Border(
+                  top: BorderSide(color: Colors.grey[200]!),
+                ),
+              ),
+              child: Center(
+                child: TextButton(
+                  onPressed: () async {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('로그아웃'),
+                        content: const Text('로그아웃하시겠습니까?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.of(ctx).pop(false),
+                            child: const Text('취소'),
+                          ),
+                          FilledButton(
+                            onPressed: () => Navigator.of(ctx).pop(true),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFFF6F61),
+                            ),
+                            child: const Text('로그아웃'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirm == true && context.mounted) {
+                      await authService.logout();
+                      if (context.mounted) {
+                        context.go('/login');
+                      }
+                    }
+                  },
+                  child: Text(
+                    '로그아웃',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[700],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -9741,13 +9782,11 @@ class _MoreCardButton extends StatelessWidget {
   final String title;
   final IconData icon;
   final VoidCallback onTap;
-  final bool isDestructive;
 
   const _MoreCardButton({
     required this.title,
     required this.icon,
     required this.onTap,
-    this.isDestructive = false,
   });
 
   @override
@@ -9773,7 +9812,6 @@ class _MoreCardButton extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
               children: [
-                // 아이콘
                 Container(
                   width: 40,
                   height: 40,
@@ -9788,18 +9826,16 @@ class _MoreCardButton extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                // 텍스트
                 Expanded(
                   child: Text(
                     title,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
-                      color: isDestructive ? Colors.red : const Color(0xFF1A1A1A),
+                      color: Color(0xFF1A1A1A),
                     ),
                   ),
                 ),
-                // 화살표
                 Icon(
                   Icons.chevron_right,
                   color: Colors.grey[400],

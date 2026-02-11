@@ -58,10 +58,16 @@ class CustomBottomNav extends StatelessWidget {
             onTap: () => onTap(3),
           ),
           _NavItem(
-            icon: Icons.more_horiz_rounded,
-            label: '더보기',
+            icon: Icons.work_outline_rounded,
+            label: 'OD',
             isActive: currentIndex == 4,
             onTap: () => onTap(4),
+          ),
+          _NavItem(
+            icon: Icons.more_horiz_rounded,
+            label: '더보기',
+            isActive: currentIndex == 5,
+            onTap: () => onTap(5),
           ),
         ],
       ),

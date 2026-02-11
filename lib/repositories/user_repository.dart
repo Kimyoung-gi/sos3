@@ -29,13 +29,14 @@ class UserRepository {
     }
   }
 
-  /// 기본 계정 생성: USER 1111/1111 SELF, ADMIN 1111/1111
+  /// 기본 계정 생성: USER 1111/1111 SELF, ADMIN 1111/1111, ADMIN 111111/111111
   Future<void> ensureDefaults() async {
     try {
       // 기본 사용자 존재 여부 확인
       final userDoc = await _usersRef.doc('1111_user').get();
       final adminDoc = await _usersRef.doc('1111_admin').get();
-      
+      final adminDoc6 = await _usersRef.doc('111111_admin').get();
+
       if (!userDoc.exists) {
         await _usersRef.doc('1111_user').set({
           'id': '1111',
@@ -50,7 +51,7 @@ class UserRepository {
         });
         debugPrint('✅ 기본 사용자(1111_user) 생성 완료');
       }
-      
+
       if (!adminDoc.exists) {
         await _usersRef.doc('1111_admin').set({
           'id': '1111',
@@ -64,6 +65,21 @@ class UserRepository {
           'password': '1111',
         });
         debugPrint('✅ 기본 관리자(1111_admin) 생성 완료');
+      }
+
+      if (!adminDoc6.exists) {
+        await _usersRef.doc('111111_admin').set({
+          'id': '111111',
+          'name': '관리자',
+          'hq': '',
+          'branch': '',
+          'role': 'admin',
+          'scope': 'all',
+          'isActive': true,
+          'sellerName': null,
+          'password': '111111',
+        });
+        debugPrint('✅ 기본 관리자(111111_admin) 생성 완료');
       }
     } catch (e) {
       debugPrint('⚠️ ensureDefaults 오류: $e');

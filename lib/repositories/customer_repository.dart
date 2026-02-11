@@ -14,6 +14,8 @@ class CustomerRepository {
   static const _keyStatus = 'sos_customer_status';
   static const _keyMemo = 'sos_customer_memo';
   static const _keyFavorites = 'favorite_customer_keys';
+  /// 고객사 등록 화면에서 직접 등록한 고객의 customerKey 목록 (엑셀 다운로드 시 등록구분 표시용)
+  static const _keyRegisteredKeys = 'sos_customer_registered_keys';
 
   Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
 
@@ -151,6 +153,22 @@ class CustomerRepository {
     return list != null ? list.toSet() : {};
   }
 
+  /// 직접 고객사 등록으로 추가/수정된 고객의 customerKey 집합 (엑셀 다운로드 등록구분용)
+  Future<Set<String>> getRegisteredCustomerKeys() async {
+    final prefs = await _prefs();
+    final list = prefs.getStringList(_keyRegisteredKeys);
+    return list != null ? list.toSet() : {};
+  }
+
+  /// 고객사 등록 화면에서 저장 시 해당 키를 직접등록 집합에 추가
+  Future<void> addRegisteredCustomerKey(String customerKey) async {
+    final prefs = await _prefs();
+    final set = await getRegisteredCustomerKeys();
+    if (set.contains(customerKey)) return;
+    set.add(customerKey);
+    await prefs.setStringList(_keyRegisteredKeys, set.toList());
+  }
+
   /// 중복 키: customerName|openDate|productName|sellerName
   static String _dupKey(Customer c) =>
       '${c.customerName}|${c.openDate}|${c.productName}|${c.sellerName}';
@@ -274,6 +292,9 @@ class CustomerRepository {
       updatedList.add(customerToSave);
       
       await _saveAll(updatedList);
+
+      // 직접 고객사 등록으로 등록된 키 기록 (엑셀 다운로드 시 등록구분 표시용)
+      await addRegisteredCustomerKey(customerKey);
       
       // status와 memo도 함께 저장 (등록 시 입력한 값 저장)
       if (newCustomer.salesStatus.isNotEmpty) {

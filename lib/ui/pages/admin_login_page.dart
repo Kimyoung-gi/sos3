@@ -52,6 +52,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
 
     if (!mounted) return;
     if (result.isSuccess) {
+      // 반드시 관리자 대시보드로만 이동 (리다이렉트보다 우선)
       context.go('/admin');
       return;
     }

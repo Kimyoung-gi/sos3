@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -32,18 +33,18 @@ class AdminHomePage extends StatefulWidget {
 class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProviderStateMixin {
   int _selectedIndex = 0;
   late TabController _tabController;
-  
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) {
         setState(() => _selectedIndex = _tabController.index);
       }
     });
   }
-  
+
   @override
   void dispose() {
     _tabController.dispose();
@@ -56,6 +57,8 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
         return const _UserManagementTab();
       case 1:
         return AdminCsvUploadPage();
+      case 2:
+        return const _ExcelDownloadTab();
       default:
         return const _UserManagementTab();
     }
@@ -86,6 +89,7 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
             tabs: const [
               Tab(icon: Icon(Icons.people), text: '사용자 관리'),
               Tab(icon: Icon(Icons.cloud_upload), text: 'CSV 업로드'),
+              Tab(icon: Icon(Icons.download), text: '엑셀 다운로드'),
             ],
           ),
         ),
@@ -128,6 +132,168 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
             },
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 엑셀 다운로드 탭 - 고객사 정보 CSV 다운로드 (마지막 컬럼: CSV파일업로드/직접 고객사등록 여부)
+class _ExcelDownloadTab extends StatefulWidget {
+  const _ExcelDownloadTab();
+
+  @override
+  State<_ExcelDownloadTab> createState() => _ExcelDownloadTabState();
+}
+
+class _ExcelDownloadTabState extends State<_ExcelDownloadTab> {
+  bool _isLoading = false;
+
+  static String _escapeCsv(String value) {
+    final s = value.replaceAll('"', '""');
+    if (s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r')) {
+      return '"$s"';
+    }
+    return s;
+  }
+
+  Future<void> _downloadCustomerExcel() async {
+    setState(() => _isLoading = true);
+    try {
+      final repo = context.read<CustomerRepository>();
+      final customers = await repo.getAll();
+      final registeredKeys = await repo.getRegisteredCustomerKeys();
+
+      final headers = [
+        '고객명', '개통일자', '상품유형', '상품명', '본부', '지사', '실판매자', '건물명',
+        '영업상태', '메모', '담당자', '등록구분',
+      ];
+      final sb = StringBuffer();
+      sb.writeln(headers.map(_escapeCsv).join(','));
+
+      for (final c in customers) {
+        final source = registeredKeys.contains(c.customerKey)
+            ? '직접 고객사 등록'
+            : 'CSV 파일 업로드';
+        final row = [
+          c.customerName,
+          c.openDate,
+          c.productType,
+          c.productName,
+          c.hq,
+          c.branch,
+          c.sellerName,
+          c.building,
+          c.salesStatus,
+          c.memo,
+          c.personInCharge,
+          source,
+        ];
+        sb.writeln(row.map(_escapeCsv).join(','));
+      }
+
+      final dateStr = DateTime.now().toString().substring(0, 10).replaceAll('-', '');
+      final filename = '고객사_데이터_$dateStr.csv';
+
+      if (kIsWeb) {
+        CsvDownloader.download(sb.toString(), filename);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('다운로드되었습니다. ($filename, ${customers.length}건)'),
+              backgroundColor: AppColors.statusComplete,
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('엑셀(CSV) 다운로드는 웹 환경에서만 가능합니다.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('고객사 엑셀 다운로드 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('다운로드 실패: $e'),
+            backgroundColor: AppColors.customerRed,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '엑셀 다운로드',
+            style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '고객사 정보를 CSV 파일로 다운로드합니다. Excel에서 열 수 있으며, 마지막 컬럼에 CSV 파일 업로드/직접 고객사 등록 여부가 포함됩니다.',
+            style: TextStyle(color: Colors.grey[600], fontSize: 14),
+          ),
+          const SizedBox(height: 32),
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppDimens.cardRadius),
+              side: BorderSide(color: AppColors.border),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.table_chart, size: 32, color: AppColors.customerRed),
+                      const SizedBox(width: 16),
+                      const Expanded(
+                        child: Text(
+                          '고객사 데이터',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      FilledButton.icon(
+                        onPressed: _isLoading ? null : _downloadCustomerExcel,
+                        icon: _isLoading
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.download, size: 20),
+                        label: Text(_isLoading ? '다운로드 중...' : '고객사 데이터 다운로드'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.customerRed,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    '다운로드 파일에는 고객명, 개통일자, 상품유형, 상품명, 본부, 지사, 실판매자, 건물명, 영업상태, 메모, 담당자, 등록구분(CSV 파일 업로드 / 직접 고객사 등록)이 포함됩니다.',
+                    style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -952,7 +1118,6 @@ class _UserManagementTabState extends State<_UserManagementTab> {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(AppDimens.customerCardRadius),
                       child: SingleChildScrollView(
-                      child: SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
                         child: DataTable(
                           columns: const [
@@ -994,10 +1159,9 @@ class _UserManagementTabState extends State<_UserManagementTab> {
                       ),
                     ),
                   ),
-                ),
-          ],
-              ),
+              ],
             ),
+          ),
           ),
         );
       },

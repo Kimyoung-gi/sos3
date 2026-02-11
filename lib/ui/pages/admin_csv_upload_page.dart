@@ -14,7 +14,7 @@ import '../../services/csv_reload_bus.dart';
 import '../../utils/csv_template_generator.dart';
 import '../../utils/csv_downloader.dart';
 
-/// CSV 파일 목록 (고정)
+/// CSV 파일 목록 (고정) — 2행×4열 그리드용 (8칸, 7개 파일)
 const List<String> _csvFiles = [
   'customerlist.csv',
   'kpi-info.csv',
@@ -22,6 +22,7 @@ const List<String> _csvFiles = [
   'kpi_itr.csv',
   'kpi_mobile.csv',
   'kpi_etc.csv',
+  'OD.CSV',
 ];
 
 /// 관리자 CSV 업로드 페이지
@@ -86,9 +87,9 @@ class _AdminCsvUploadPageState extends State<AdminCsvUploadPage> {
     return '${(bytes / 1024 / 1024).toStringAsFixed(2)} MB';
   }
 
-  /// 3*3 그리드, 각 행 높이는 해당 행 카드 내용에 맞춤
+  /// 2행×4열 그리드, 각 행 높이는 해당 행 카드 내용에 맞춤
   Widget _buildCsvCardGrid() {
-    const int crossAxisCount = 3;
+    const int crossAxisCount = 4;
     const double spacing = 12;
     final list = _csvFiles;
     final rows = <Widget>[];

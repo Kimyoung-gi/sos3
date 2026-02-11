@@ -121,18 +121,17 @@ class _CustomerListPageState extends State<CustomerListPage> {
     });
   }
 
-  /// CSV 재로드 처리
+  /// CSV 재로드 처리 (고객사 등록 후 목록 갱신용 — 지연 없이 즉시 새로고침)
   void _handleCsvReload(String filename) {
-    if (_isInitialLoad || _isReloading || _isLoading) {
+    _reloadDebounceTimer?.cancel();
+    if (_isInitialLoad) return;
+    if (_isReloading || _isLoading) {
+      _reloadDebounceTimer = Timer(const Duration(milliseconds: 400), () {
+        if (mounted) _loadCustomers();
+      });
       return;
     }
-    
-    _reloadDebounceTimer?.cancel();
-    _reloadDebounceTimer = Timer(const Duration(milliseconds: 300), () {
-      if (mounted && !_isReloading && !_isLoading && !_isInitialLoad) {
-        _loadCustomers();
-      }
-    });
+    _loadCustomers();
   }
 
   /// 고객사 파일인지 확인
@@ -156,7 +155,7 @@ class _CustomerListPageState extends State<CustomerListPage> {
       final customerRepo = context.read<CustomerRepository>();
       final currentUser = authService.currentUser;
       
-      // 초기 로딩 시에만 CSV 로드
+      // 초기 로딩 시에만 CSV 로드 (merge 사용: 고객사 등록으로 추가한 데이터가 유지되도록)
       if (_isInitialLoad) {
         try {
           final csvText = await CsvService.load('customerlist.csv');
@@ -164,7 +163,7 @@ class _CustomerListPageState extends State<CustomerListPage> {
             final rows = CsvParserExtended.parseCustomerBase(csvText);
             final validCustomers = rows.where((r) => r.data != null).map((r) => r.data!).toList();
             if (validCustomers.isNotEmpty) {
-              await customerRepo.replaceFromCsv(validCustomers);
+              await customerRepo.mergeFromCsv(validCustomers, updateOnDuplicate: true);
             }
           }
         } catch (e) {
@@ -322,17 +321,26 @@ class _CustomerListPageState extends State<CustomerListPage> {
         backgroundColor: AppColors.card,
         elevation: 1,
         automaticallyImplyLeading: false,
-        title: Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: Image.asset(
-            'assets/images/sos_logo.png',
-            height: 28,
-            fit: BoxFit.contain,
-            filterQuality: FilterQuality.high,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.business_rounded, color: AppColors.textPrimary, size: 20),
+              const SizedBox(width: 6),
+              Text('고객사', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+            ],
           ),
         ),
+        leadingWidth: 90,
         centerTitle: true,
-        actions: const [],
+        title: Image.asset(
+          'assets/images/sos_logo.png',
+          height: 28,
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+        ),
+        actions: const [SizedBox(width: 90)],
       ),
       body: Column(
         children: [

@@ -2,6 +2,7 @@ import '../models/customer.dart';
 import '../models/sales_status.dart';
 import '../models/performance.dart';
 import '../models/upload_history.dart';
+import '../models/od_item.dart';
 
 /// CSV 파싱 결과 행 (확장)
 class CsvRowExtended<T> {
@@ -333,6 +334,85 @@ class CsvParserExtended {
         ),
         lineIndex: i + 1,
         rawRow: {for (int j = 0; j < rawHeaders.length && j < vals.length; j++) rawHeaders[j]: vals[j]},
+      ));
+    }
+    return result;
+  }
+
+  /// OD CSV 한 줄 파싱 (쉼표 구분, 따옴표로 감싼 필드 지원)
+  static List<String> _parseCsvLine(String line) {
+    final fields = <String>[];
+    var i = 0;
+    while (i < line.length) {
+      if (line[i] == '"') {
+        i++;
+        final sb = StringBuffer();
+        while (i < line.length) {
+          if (line[i] == '"') {
+            i++;
+            if (i < line.length && line[i] == '"') {
+              sb.write('"');
+              i++;
+            } else {
+              break;
+            }
+          } else {
+            sb.write(line[i]);
+            i++;
+          }
+        }
+        fields.add(sb.toString().trim());
+      } else {
+        final sb = StringBuffer();
+        while (i < line.length && line[i] != ',') {
+          sb.write(line[i]);
+          i++;
+        }
+        fields.add(sb.toString().trim());
+        if (i < line.length) i++;
+      }
+    }
+    return fields;
+  }
+
+  /// OD CSV 파싱 (사이트명, 회사명, 직무, 일정, 주소, 업종, 연락처, 링크, 지역, 본부)
+  static List<OdItem> parseOd(String csv) {
+    final result = <OdItem>[];
+    final lines = csv.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    if (lines.isEmpty) return result;
+
+    final first = _removeBOM(lines[0]);
+    final headers = _parseCsvLine(first).map((e) => _removeBOM(e).toLowerCase()).toList();
+    int idx(String name) {
+      final i = headers.indexWhere((h) => h.contains(name) || name.contains(h));
+      return i >= 0 ? i : -1;
+    }
+
+    final siteIdx = idx('사이트명');
+    final companyIdx = idx('회사명');
+    final jobIdx = idx('직무');
+    final scheduleIdx = idx('일정');
+    final addressIdx = idx('주소');
+    final industryIdx = idx('업종');
+    final contactIdx = idx('연락처');
+    final linkIdx = idx('링크');
+    final regionIdx = idx('지역');
+    final hqIdx = idx('본부');
+
+    for (int i = 1; i < lines.length; i++) {
+      final fields = _parseCsvLine(_removeBOM(lines[i]));
+      String v(int fi) => fi >= 0 && fi < fields.length ? fields[fi].trim() : '';
+      result.add(OdItem(
+        siteName: v(siteIdx),
+        companyName: v(companyIdx),
+        jobTitle: v(jobIdx),
+        schedule: v(scheduleIdx),
+        address: v(addressIdx),
+        industry: v(industryIdx),
+        contact: v(contactIdx),
+        link: v(linkIdx),
+        region: v(regionIdx),
+        hq: v(hqIdx),
       ));
     }
     return result;

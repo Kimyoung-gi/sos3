@@ -6,7 +6,7 @@ import '../../services/auth_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_dimens.dart';
 
-/// 일반 로그인 페이지. 로고, 아이디/비밀번호, 로그인 버튼, 관리자 링크.
+/// 일반 로그인 페이지. 로고, 아이디/비밀번호, 로그인 버튼.
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -196,14 +196,6 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                  TextButton(
-                    onPressed: () => context.go('/admin-login'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: AppColors.textSecondary,
-                    ),
-                    child: const Text('관리자 페이지'),
                   ),
                 ],
               ),

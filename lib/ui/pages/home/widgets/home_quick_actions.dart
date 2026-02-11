@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../customer_register_page.dart';
 
@@ -69,36 +67,11 @@ class HomeQuickActions extends StatelessWidget {
               },
             ),
             _QuickActionCard(
-              icon: Icons.language,
-              label: 'OD 열기',
+              icon: Icons.work_outline,
+              label: 'OD',
               color: const Color(0xFFE8F5E9),
               iconColor: const Color(0xFF4CAF50),
-              onTap: () async {
-                const odUrl = 'https://kimyoung-gi.github.io/11/';
-                try {
-                  final uri = Uri.parse(odUrl);
-                  if (kIsWeb) {
-                    await launchUrl(
-                      uri,
-                      mode: LaunchMode.externalApplication,
-                      webOnlyWindowName: '_blank',
-                    );
-                  } else {
-                    if (await canLaunchUrl(uri)) {
-                      await launchUrl(uri, mode: LaunchMode.externalApplication);
-                    }
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('브라우저에서 열 수 없습니다'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
-                }
-              },
+              onTap: () => context.go('/main/4'),
             ),
           ],
         ),

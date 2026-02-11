@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../repositories/customer_repository.dart';
+import '../../../../services/csv_reload_bus.dart';
 import '../../../../utils/customer_converter.dart';
 import '../../../../main.dart' show CustomerData, CustomerDetailScreen, MoreNavIntent;
 import '../../../../services/auth_service.dart';
@@ -24,11 +27,23 @@ class _HomeRecentActivityState extends State<HomeRecentActivity> {
   List<CustomerData> _expiringSoon = [];
   List<CustomerData> _recentRegistered = [];
   bool _isLoading = true;
+  StreamSubscription<String>? _csvReloadSubscription;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _csvReloadSubscription = CsvReloadBus().stream.listen((filename) {
+      if (filename.contains('customerlist') || filename.contains('고객사')) {
+        _load();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _csvReloadSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -135,7 +150,7 @@ class _HomeRecentActivityState extends State<HomeRecentActivity> {
 
   void _navigateToMore(String route) {
     context.read<MoreNavIntent>().goToMore(route);
-    context.go('/main/4');
+    context.go('/main/5');
   }
 
   void _openCustomerDetail(CustomerData customer) {
