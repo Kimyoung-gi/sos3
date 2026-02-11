@@ -38,16 +38,12 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
   // 로딩 상태
   bool _isLoading = false;
   
-  // 옵션 리스트 (기존 데이터에서 추출하거나 기본값 사용)
-  List<String> _productTypeOptions = [];
+  // 옵션 리스트 (순서: Internet, IPTV, Mobile, 하이오더, AI로봇, 기타)
+  static const List<String> _productTypeOptions = [
+    'Internet', 'IPTV', 'Mobile', '하이오더', 'AI로봇', '기타',
+  ];
   static const List<String> _hqOptions = ['강북', '강남', '강서', '동부', '서부'];
   static const List<String> _salesStatusOptions = ['영업전', '영업중', '영업실패', '영업성공'];
-  
-  @override
-  void initState() {
-    super.initState();
-    _loadProductTypes();
-  }
   
   @override
   void dispose() {
@@ -60,33 +56,6 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
     _memoController.dispose();
     _personInChargeController.dispose();
     super.dispose();
-  }
-  
-  /// 기존 고객 데이터에서 상품유형 리스트 추출
-  Future<void> _loadProductTypes() async {
-    try {
-      final repo = context.read<CustomerRepository>();
-      final allCustomers = await repo.getAll();
-      final productTypes = allCustomers
-          .map((c) => c.productType)
-          .where((type) => type.isNotEmpty)
-          .toSet()
-          .toList()
-        ..sort();
-      
-      if (mounted) {
-        setState(() {
-          _productTypeOptions = productTypes.isNotEmpty ? productTypes : ['Internet', 'Mobile', 'IPTV'];
-        });
-      }
-    } catch (e) {
-      debugPrint('상품유형 로드 오류: $e');
-      if (mounted) {
-        setState(() {
-          _productTypeOptions = ['Internet', 'Mobile', 'IPTV'];
-        });
-      }
-    }
   }
   
   /// 날짜 선택
@@ -105,12 +74,10 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
     }
   }
   
-  /// 폼 검증
+  /// 폼 검증 (개통일자, 상품명은 필수 제외)
   bool get _isFormValid {
     return _customerNameController.text.trim().isNotEmpty &&
-        _openDateController.text.trim().isNotEmpty &&
         _selectedProductType != null &&
-        _productNameController.text.trim().isNotEmpty &&
         _selectedHq != null &&
         _selectedSalesStatus != null;
   }
@@ -139,8 +106,8 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
       // Customer 모델 생성
       final newCustomer = Customer(
         customerName: _customerNameController.text.trim(),
-        openDate: _openDateController.text.trim(),
-        productName: _productNameController.text.trim(),
+        openDate: _openDateController.text.trim().isEmpty ? '' : _openDateController.text.trim(),
+        productName: _productNameController.text.trim().isEmpty ? '' : _productNameController.text.trim(),
         productType: _selectedProductType!,
         hq: _selectedHq!,
         branch: _branchController.text.trim(),
@@ -326,10 +293,9 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
                     onTap: _selectDate,
                     style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
                     decoration: _inputDecoration(
-                      labelText: '개통일자 *',
+                      labelText: '개통일자',
                       suffixIcon: Icon(Icons.calendar_today, size: 20, color: AppColors.textSecondary),
                     ),
-                    validator: (value) => value?.trim().isEmpty ?? true ? '개통일자를 선택하세요' : null,
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -357,8 +323,7 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
                   TextFormField(
                     controller: _productNameController,
                     style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
-                    decoration: _inputDecoration(labelText: '상품명 *'),
-                    validator: (value) => value?.trim().isEmpty ?? true ? '상품명을 입력하세요' : null,
+                    decoration: _inputDecoration(labelText: '상품명'),
                     onChanged: (_) => setState(() {}),
                   ),
                   const SizedBox(height: 16),
