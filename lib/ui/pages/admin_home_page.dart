@@ -3,6 +3,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 
+import '../theme/app_colors.dart';
+import '../theme/app_dimens.dart';
 import '../../models/user.dart';
 import '../../models/customer.dart';
 import '../../models/sales_status.dart';
@@ -63,10 +65,13 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
     return Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('관리자 대시보드'),
-        backgroundColor: Colors.white,
-        elevation: 1,
+        title: Text('관리자 대시보드', style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600)),
+        backgroundColor: AppColors.card,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        iconTheme: IconThemeData(color: AppColors.textPrimary),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(48),
           child: TabBar(
@@ -75,6 +80,9 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
               _tabController.animateTo(index);
               setState(() => _selectedIndex = index);
             },
+            labelColor: AppColors.customerRed,
+            unselectedLabelColor: AppColors.textSecondary,
+            indicatorColor: AppColors.customerRed,
             tabs: const [
               Tab(icon: Icon(Icons.people), text: '사용자 관리'),
               Tab(icon: Icon(Icons.cloud_upload), text: 'CSV 업로드'),
@@ -82,20 +90,23 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
           ),
         ),
         actions: [
-          Text('${auth.currentUser?.name ?? ''} (${auth.currentUser?.roleLabel ?? ''})', style: const TextStyle(fontSize: 14)),
-          const SizedBox(width: 16),
-          // 일반 페이지로 이동 버튼 (Admin만 표시)
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Center(
+              child: Text(
+                '${auth.currentUser?.name ?? ''} (${auth.currentUser?.roleLabel ?? ''})',
+                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+              ),
+            ),
+          ),
           if (auth.isAdmin)
             IconButton(
-              icon: const Icon(Icons.home),
+              icon: Icon(Icons.home, color: AppColors.textPrimary),
               tooltip: '일반 페이지로 이동',
-              onPressed: () {
-                context.go('/main');
-              },
+              onPressed: () => context.go('/main'),
             ),
-          const SizedBox(width: 8),
           IconButton(
-            icon: const Icon(Icons.logout),
+            icon: Icon(Icons.logout, color: AppColors.textPrimary),
             tooltip: '로그아웃',
             onPressed: () async {
               await auth.logout();
@@ -104,15 +115,18 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
           ),
         ],
       ),
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return SizedBox(
-              width: constraints.maxWidth,
-              height: constraints.maxHeight,
-              child: _buildSelectedTab(),
-            );
-          },
+      body: Container(
+        color: AppColors.background,
+        child: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SizedBox(
+                width: constraints.maxWidth,
+                height: constraints.maxHeight,
+                child: _buildSelectedTab(),
+              );
+            },
+          ),
         ),
       ),
     );
@@ -768,7 +782,7 @@ class _UserManagementTabState extends State<_UserManagementTab> {
       if (!mounted) return;
       setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('로드 실패: $e'), backgroundColor: Colors.red),
+        SnackBar(content: Text('로드 실패: $e'), backgroundColor: AppColors.customerRed),
       );
     }
   }
@@ -793,7 +807,7 @@ class _UserManagementTabState extends State<_UserManagementTab> {
       await _loadUsers();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('사용자가 생성되었습니다.'), backgroundColor: Colors.green),
+          SnackBar(content: const Text('사용자가 생성되었습니다.'), backgroundColor: AppColors.statusComplete),
         );
       }
     }
@@ -808,7 +822,7 @@ class _UserManagementTabState extends State<_UserManagementTab> {
       await _loadUsers();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('사용자가 수정되었습니다.'), backgroundColor: Colors.green),
+          SnackBar(content: const Text('사용자가 수정되었습니다.'), backgroundColor: AppColors.statusComplete),
         );
       }
     }
@@ -818,16 +832,19 @@ class _UserManagementTabState extends State<_UserManagementTab> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('사용자 삭제'),
-        content: Text('정말 "${user.name}" 사용자를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.'),
+        title: Text('사용자 삭제', style: TextStyle(color: AppColors.textPrimary)),
+        content: Text(
+          '정말 "${user.name}" 사용자를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('취소'),
+            child: Text('취소', style: TextStyle(color: AppColors.textSecondary)),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.customerRed),
             child: const Text('삭제'),
           ),
         ],
@@ -840,35 +857,28 @@ class _UserManagementTabState extends State<_UserManagementTab> {
         await _loadUsers();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('사용자가 삭제되었습니다.'), backgroundColor: Colors.green),
+            SnackBar(content: const Text('사용자가 삭제되었습니다.'), backgroundColor: AppColors.statusComplete),
           );
         }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('삭제 실패: $e'), backgroundColor: Colors.red),
+            SnackBar(content: Text('삭제 실패: $e'), backgroundColor: AppColors.customerRed),
           );
         }
       }
     }
   }
 
-  // 권한 라벨 변환
+  // 접근레벨 라벨: 일반 / 스탭 / 관리자
   String _roleToLabel(UserRole role) {
-    return role == UserRole.admin ? '관리자' : '일반';
-  }
-
-  // 권한범위 라벨 변환
-  String _scopeToLabel(UserScope scope) {
-    switch (scope) {
-      case UserScope.self:
-        return '본인';
-      case UserScope.branch:
-        return '센터';
-      case UserScope.hq:
-        return '본부';
-      case UserScope.all:
-        return '전체';
+    switch (role) {
+      case UserRole.user:
+        return '일반';
+      case UserRole.manager:
+        return '스탭';
+      case UserRole.admin:
+        return '관리자';
     }
   }
 
@@ -890,35 +900,58 @@ class _UserManagementTabState extends State<_UserManagementTab> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Text('사용자 관리', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                  const SizedBox(height: 12),
+                  TextField(
+                    style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: '검색 (아이디/이름/본부)',
+                      hintStyle: TextStyle(color: AppColors.textSecondary),
+                      prefixIcon: Icon(Icons.search, size: 20, color: AppColors.textSecondary),
+                      filled: true,
+                      fillColor: AppColors.card,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppDimens.inputRadius),
+                        borderSide: BorderSide(color: AppColors.border),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                    onChanged: (v) => setState(() => _searchQuery = v),
+                  ),
+                  const SizedBox(height: 16),
                   Row(
                     children: [
-                      const Text('사용자 관리', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                      const SizedBox(width: 16),
                       FilledButton.icon(
                         onPressed: _showCreateDialog,
-                        icon: const Icon(Icons.add),
+                        icon: const Icon(Icons.add, size: 20),
                         label: const Text('사용자 생성'),
-                      ),
-                      const Spacer(),
-                      SizedBox(
-                        width: 240,
-                        child: TextField(
-                          decoration: InputDecoration(
-                            hintText: '검색 (아이디/이름/본부/지사)',
-                            prefixIcon: const Icon(Icons.search, size: 20),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          ),
-                          onChanged: (v) => setState(() => _searchQuery = v),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.customerRed,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppDimens.filterPillRadius)),
                         ),
                       ),
                     ],
                   ),
-            const SizedBox(height: 16),
+                  const SizedBox(height: 16),
             _loading
                 ? const Center(child: CircularProgressIndicator())
-                : Card(
-                    child: SingleChildScrollView(
+                : Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.card,
+                      borderRadius: BorderRadius.circular(AppDimens.customerCardRadius),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.08),
+                          blurRadius: 12,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(AppDimens.customerCardRadius),
+                      child: SingleChildScrollView(
                       child: SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
                         child: DataTable(
@@ -926,21 +959,17 @@ class _UserManagementTabState extends State<_UserManagementTab> {
                             DataColumn(label: Text('아이디')),
                             DataColumn(label: Text('이름')),
                             DataColumn(label: Text('본부')),
-                            DataColumn(label: Text('센터')),
                             DataColumn(label: Text('권한')),
-                            DataColumn(label: Text('권한범위')),
                             DataColumn(label: Text('작업')),
                           ],
                           rows: _filteredUsers.map((u) {
                             return DataRow(
-                              color: !u.isActive ? MaterialStateProperty.all(Colors.grey.shade200) : null,
+                              color: !u.isActive ? MaterialStateProperty.all(AppColors.pillUnselectedBg) : null,
                               cells: [
                                 DataCell(Text(u.id)),
                                 DataCell(Text(u.name)),
                                 DataCell(Text(u.hq.isEmpty ? '-' : u.hq)),
-                                DataCell(Text(u.branch.isEmpty ? '-' : u.branch)),
                                 DataCell(Text(_roleToLabel(u.role))),
-                                DataCell(Text(_scopeToLabel(u.scope))),
                                 DataCell(
                                   Row(
                                     mainAxisSize: MainAxisSize.min,
@@ -951,7 +980,7 @@ class _UserManagementTabState extends State<_UserManagementTab> {
                                         tooltip: '수정',
                                       ),
                                       IconButton(
-                                        icon: const Icon(Icons.delete, size: 20, color: Colors.red),
+                                        icon: Icon(Icons.delete, size: 20, color: AppColors.customerRed),
                                         onPressed: () => _showDeleteDialog(u),
                                         tooltip: '삭제',
                                       ),
@@ -965,6 +994,7 @@ class _UserManagementTabState extends State<_UserManagementTab> {
                       ),
                     ),
                   ),
+                ),
           ],
               ),
             ),
@@ -993,50 +1023,40 @@ class _UserEditDialogState extends State<_UserEditDialog> {
   late TextEditingController _passwordController;
   late TextEditingController _passwordConfirmController;
   
-  // 선택값
+  // 본부 필수, 기본값 없음(선택항목). 센터(지사) 미등록.
   String? _selectedHq;
-  String? _selectedCenter;
-  String? _selectedRoleLabel; // '일반' 또는 '관리자'
-  String? _selectedScopeLabel; // '본인', '센터', '본부', '전체'
-  
-  // 비밀번호 표시/숨김
+  String? _selectedRoleLabel; // '일반', '스탭', '관리자'
   bool _obscurePassword = true;
   bool _obscurePasswordConfirm = true;
-  
   bool _isEdit = false;
   bool _isLoading = false;
 
-  // 옵션 리스트
-  static const List<String> _hqOptions = ['강북', '강남', '강서', '동부', '서부'];
-  static const List<String> _centerOptions = ['강북', '강동', '강원', '강남', '남부', '강서', '인천', '부산', '경남', '대구', '충청', '광주', '전남'];
-  static const List<String> _roleLabels = ['일반', '관리자'];
-  static const List<String> _scopeLabels = ['본인', '센터', '본부', '전체'];
+  /// 본부 선택항목: 본사/강북/강남/강서/동부/서부 (기본값 비움)
+  static const List<String> _hqOptions = ['본사', '강북', '강남', '강서', '동부', '서부'];
+  static const List<String> _roleLabels = ['일반', '스탭', '관리자'];
   
-  // 매핑
   static UserRole _roleFromLabel(String label) {
-    return label == '관리자' ? UserRole.admin : UserRole.user;
-  }
-  
-  static UserScope _scopeFromLabel(String label) {
     switch (label) {
-      case '본인': return UserScope.self;
-      case '센터': return UserScope.branch;
-      case '본부': return UserScope.hq;
-      case '전체': return UserScope.all;
-      default: return UserScope.self;
+      case '스탭': return UserRole.manager;
+      case '관리자': return UserRole.admin;
+      default: return UserRole.user;
     }
   }
   
   static String _roleToLabel(UserRole role) {
-    return role == UserRole.admin ? '관리자' : '일반';
+    switch (role) {
+      case UserRole.manager: return '스탭';
+      case UserRole.admin: return '관리자';
+      default: return '일반';
+    }
   }
   
-  static String _scopeToLabel(UserScope scope) {
-    switch (scope) {
-      case UserScope.self: return '본인';
-      case UserScope.branch: return '센터';
-      case UserScope.hq: return '본부';
-      case UserScope.all: return '전체';
+  /// 역할에 따른 조회 범위 (권한범위 UI 제거, 자동 부여)
+  static UserScope _scopeFromRole(UserRole role) {
+    switch (role) {
+      case UserRole.admin: return UserScope.all;
+      case UserRole.manager: return UserScope.hq;
+      case UserRole.user: return UserScope.self;
     }
   }
 
@@ -1052,13 +1072,9 @@ class _UserEditDialogState extends State<_UserEditDialog> {
     if (_isEdit && widget.user != null) {
       final u = widget.user!;
       _selectedHq = u.hq.isNotEmpty ? u.hq : null;
-      _selectedCenter = u.branch.isNotEmpty ? u.branch : null;
       _selectedRoleLabel = _roleToLabel(u.role);
-      // 관리자일 경우 권한범위는 항상 '전체'
-      _selectedScopeLabel = u.role == UserRole.admin ? '전체' : _scopeToLabel(u.scope);
     } else {
       _selectedRoleLabel = '일반';
-      _selectedScopeLabel = '본인';
     }
   }
 
@@ -1074,9 +1090,8 @@ class _UserEditDialogState extends State<_UserEditDialog> {
   bool get _isFormValid {
     if (!_isEdit && _idController.text.trim().isEmpty) return false;
     if (_nameController.text.trim().isEmpty) return false;
+    if (_selectedHq == null || _selectedHq!.isEmpty) return false;
     if (_selectedRoleLabel == null) return false;
-    // 관리자가 아닐 때만 권한범위 체크
-    if (_selectedRoleLabel != '관리자' && _selectedScopeLabel == null) return false;
     if (!_isEdit) {
       if (_passwordController.text.length < 6) return false;
       if (_passwordController.text != _passwordConfirmController.text) return false;
@@ -1094,13 +1109,13 @@ class _UserEditDialogState extends State<_UserEditDialog> {
     if (!_isEdit) {
       if (_passwordController.text.length < 6) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('비밀번호는 6자 이상이어야 합니다.'), backgroundColor: Colors.red),
+          SnackBar(content: const Text('비밀번호는 6자 이상이어야 합니다.'), backgroundColor: AppColors.customerRed),
         );
         return;
       }
       if (_passwordController.text != _passwordConfirmController.text) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('비밀번호가 일치하지 않습니다.'), backgroundColor: Colors.red),
+          SnackBar(content: const Text('비밀번호가 일치하지 않습니다.'), backgroundColor: AppColors.customerRed),
         );
         return;
       }
@@ -1136,17 +1151,16 @@ class _UserEditDialogState extends State<_UserEditDialog> {
         return;
       }
       
-      // 관리자 권한일 경우 권한범위는 항상 ALL
-      final scope = _roleFromLabel(_selectedRoleLabel!) == UserRole.admin
-          ? UserScope.all
-          : _scopeFromLabel(_selectedScopeLabel!);
+      // 접근레벨에 따라 조회 범위 자동 부여 (기능별로 PermissionService에서 적용)
+      final role = _roleFromLabel(_selectedRoleLabel!);
+      final scope = _scopeFromRole(role);
       
       final user = User(
         id: userId,
         name: _nameController.text.trim(),
-        hq: _selectedHq ?? '',
-        branch: _selectedCenter ?? '',
-        role: _roleFromLabel(_selectedRoleLabel!),
+        hq: _selectedHq!,
+        branch: '', // 센터 미등록
+        role: role,
         scope: scope,
         isActive: true,
         sellerName: null,
@@ -1161,14 +1175,14 @@ class _UserEditDialogState extends State<_UserEditDialog> {
       if (mounted) {
         Navigator.of(context).pop({'success': true});
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_isEdit ? '사용자가 수정되었습니다.' : '사용자가 생성되었습니다.'), backgroundColor: Colors.green),
+          SnackBar(content: Text(_isEdit ? '사용자가 수정되었습니다.' : '사용자가 생성되었습니다.'), backgroundColor: AppColors.statusComplete),
         );
       }
     } catch (e) {
       debugPrint('사용자 저장 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('오류: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('오류: $e'), backgroundColor: AppColors.customerRed),
         );
       }
     } finally {
@@ -1203,7 +1217,8 @@ class _UserEditDialogState extends State<_UserEditDialog> {
     final isDesktop = MediaQuery.of(context).size.width >= 600;
     
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      backgroundColor: AppColors.card,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppDimens.customerCardRadius)),
       child: Container(
         width: isDesktop ? 700 : MediaQuery.of(context).size.width * 0.9,
         constraints: BoxConstraints(
@@ -1214,24 +1229,20 @@ class _UserEditDialogState extends State<_UserEditDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 헤더
               Container(
                 padding: const EdgeInsets.all(20),
-                decoration: const BoxDecoration(
-                  border: Border(bottom: BorderSide(color: Colors.grey, width: 0.5)),
+                decoration: BoxDecoration(
+                  border: Border(bottom: BorderSide(color: AppColors.border, width: 1)),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
                       _isEdit ? '사용자 수정' : '사용자 생성',
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close),
+                      icon: Icon(Icons.close, color: AppColors.textPrimary),
                       onPressed: () => Navigator.pop(context),
                     ),
                   ],
@@ -1244,25 +1255,25 @@ class _UserEditDialogState extends State<_UserEditDialog> {
                   child: _buildFormLayout(),
                 ),
               ),
-              // 하단 버튼
               Container(
                 padding: const EdgeInsets.all(20),
-                decoration: const BoxDecoration(
-                  border: Border(top: BorderSide(color: Colors.grey, width: 0.5)),
+                decoration: BoxDecoration(
+                  border: Border(top: BorderSide(color: AppColors.border, width: 1)),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     TextButton(
                       onPressed: _isLoading ? null : () => Navigator.pop(context),
-                      child: const Text('취소'),
+                      child: Text('취소', style: TextStyle(color: AppColors.textSecondary)),
                     ),
                     const SizedBox(width: 12),
                     FilledButton(
                       onPressed: (_isLoading || !_isFormValid) ? null : _submit,
                       style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFFFF6F61),
+                        backgroundColor: AppColors.customerRed,
                         foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppDimens.filterPillRadius)),
                       ),
                       child: _isLoading
                           ? const SizedBox(
@@ -1282,16 +1293,37 @@ class _UserEditDialogState extends State<_UserEditDialog> {
     );
   }
 
+  InputDecoration _dialogInputDecoration(String labelText, {String? hintText}) {
+    return InputDecoration(
+      labelText: labelText,
+      hintText: hintText,
+      labelStyle: TextStyle(color: AppColors.textSecondary),
+      hintStyle: TextStyle(color: AppColors.textSecondary),
+      filled: true,
+      fillColor: AppColors.card,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppDimens.inputRadius),
+        borderSide: BorderSide(color: AppColors.border),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppDimens.inputRadius),
+        borderSide: BorderSide(color: AppColors.border),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppDimens.inputRadius),
+        borderSide: BorderSide(color: AppColors.customerRed, width: 1.5),
+      ),
+    );
+  }
+
   Widget _buildFormLayout() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         TextFormField(
           controller: _idController,
-          decoration: const InputDecoration(
-            labelText: '아이디 *',
-            border: OutlineInputBorder(),
-          ),
+          style: TextStyle(color: AppColors.textPrimary),
+          decoration: _dialogInputDecoration('아이디 *'),
           enabled: !_isEdit,
           validator: (v) => (!_isEdit && (v?.trim().isEmpty ?? true)) ? '아이디를 입력하세요' : null,
           onChanged: (_) => setState(() {}),
@@ -1299,25 +1331,21 @@ class _UserEditDialogState extends State<_UserEditDialog> {
         const SizedBox(height: 16),
         TextFormField(
           controller: _nameController,
-          decoration: const InputDecoration(
-            labelText: '이름 *',
-            border: OutlineInputBorder(),
-          ),
+          style: TextStyle(color: AppColors.textPrimary),
+          decoration: _dialogInputDecoration('이름 *'),
           validator: (v) => v?.trim().isEmpty ?? true ? '이름을 입력하세요' : null,
           onChanged: (_) => setState(() {}),
         ),
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(
           value: _selectedHq,
-          decoration: const InputDecoration(
-            labelText: '본부',
-            border: OutlineInputBorder(),
-            hintText: '선택하세요',
-          ),
+          decoration: _dialogInputDecoration('본부 *', hintText: '선택하세요'),
+          dropdownColor: AppColors.card,
+          style: TextStyle(color: AppColors.textPrimary),
           items: [
             const DropdownMenuItem<String>(
               value: null,
-              child: Text('선택 안 함'),
+              child: Text('선택하세요'),
             ),
             ..._hqOptions.map((hq) {
               return DropdownMenuItem(
@@ -1326,95 +1354,31 @@ class _UserEditDialogState extends State<_UserEditDialog> {
               );
             }),
           ],
-          onChanged: (value) {
-            setState(() {
-              _selectedHq = value;
-            });
-          },
-        ),
-        const SizedBox(height: 16),
-        DropdownButtonFormField<String>(
-          value: _selectedCenter,
-          decoration: const InputDecoration(
-            labelText: '센터',
-            border: OutlineInputBorder(),
-            hintText: '선택하세요',
-          ),
-          items: [
-            const DropdownMenuItem<String>(
-              value: null,
-              child: Text('선택 안 함'),
-            ),
-            ..._centerOptions.map((center) {
-              return DropdownMenuItem(
-                value: center,
-                child: Text(center),
-              );
-            }),
-          ],
-          onChanged: (value) {
-            setState(() {
-              _selectedCenter = value;
-            });
-          },
+          onChanged: (value) => setState(() => _selectedHq = value),
+          validator: (v) => (v == null || v.isEmpty) ? '본부를 선택하세요' : null,
         ),
         const SizedBox(height: 16),
         DropdownButtonFormField<String>(
           value: _selectedRoleLabel,
-          decoration: const InputDecoration(
-            labelText: '권한 *',
-            border: OutlineInputBorder(),
-            hintText: '선택하세요',
-          ),
+          decoration: _dialogInputDecoration('권한 *', hintText: '선택하세요'),
+          dropdownColor: AppColors.card,
+          style: TextStyle(color: AppColors.textPrimary),
           items: _roleLabels.map((label) {
             return DropdownMenuItem(
               value: label,
               child: Text(label),
             );
           }).toList(),
-                onChanged: (value) {
-                  setState(() {
-                    _selectedRoleLabel = value;
-                    // 관리자로 변경 시 권한범위를 '전체'로 자동 설정
-                    if (value == '관리자') {
-                      _selectedScopeLabel = '전체';
-                    }
-                  });
-                },
-                validator: (v) => v == null ? '권한을 선택하세요' : null,
-        ),
-        const SizedBox(height: 16),
-        DropdownButtonFormField<String>(
-          value: _selectedScopeLabel,
-          decoration: InputDecoration(
-            labelText: '권한범위 *',
-            border: const OutlineInputBorder(),
-            hintText: '선택하세요',
-            enabled: _selectedRoleLabel != '관리자',
-          ),
-          items: _scopeLabels.map((label) {
-            return DropdownMenuItem(
-              value: label,
-              child: Text(label),
-            );
-          }).toList(),
-          onChanged: _selectedRoleLabel == '관리자' ? null : (value) {
-            setState(() {
-              _selectedScopeLabel = value;
-            });
+          onChanged: (value) {
+            setState(() => _selectedRoleLabel = value);
           },
-          validator: (v) {
-            // 관리자일 때는 권한범위 검증 건너뛰기
-            if (_selectedRoleLabel == '관리자') return null;
-            return v == null ? '권한범위를 선택하세요' : null;
-          },
+          validator: (v) => v == null ? '권한을 선택하세요' : null,
         ),
         const SizedBox(height: 16),
         TextFormField(
           controller: _passwordController,
-          decoration: InputDecoration(
-            labelText: _isEdit ? '비밀번호 (변경 시만)' : '비밀번호 *',
-            border: const OutlineInputBorder(),
+          style: TextStyle(color: AppColors.textPrimary),
+          decoration: _dialogInputDecoration(_isEdit ? '비밀번호 (변경 시만)' : '비밀번호 *').copyWith(
             suffixIcon: IconButton(
               icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
               onPressed: () {
@@ -1431,11 +1395,10 @@ class _UserEditDialogState extends State<_UserEditDialog> {
         const SizedBox(height: 16),
         TextFormField(
           controller: _passwordConfirmController,
-          decoration: InputDecoration(
-            labelText: _isEdit ? '비밀번호 확인 (변경 시만)' : '비밀번호 확인 *',
-            border: const OutlineInputBorder(),
+          style: TextStyle(color: AppColors.textPrimary),
+          decoration: _dialogInputDecoration(_isEdit ? '비밀번호 확인 (변경 시만)' : '비밀번호 확인 *').copyWith(
             suffixIcon: IconButton(
-              icon: Icon(_obscurePasswordConfirm ? Icons.visibility : Icons.visibility_off),
+              icon: Icon(_obscurePasswordConfirm ? Icons.visibility : Icons.visibility_off, color: AppColors.textSecondary),
               onPressed: () {
                 setState(() {
                   _obscurePasswordConfirm = !_obscurePasswordConfirm;

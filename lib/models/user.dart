@@ -21,14 +21,15 @@ class User {
     this.sellerName,
   });
 
+  /// 접근레벨 표시: 일반 / 스탭 / 관리자
   String get roleLabel {
     switch (role) {
       case UserRole.user:
-        return 'USER';
+        return '일반';
       case UserRole.manager:
-        return 'MANAGER';
+        return '스탭';
       case UserRole.admin:
-        return 'ADMIN';
+        return '관리자';
     }
   }
 
@@ -111,3 +112,14 @@ class User {
 
 enum UserRole { user, manager, admin }
 enum UserScope { self, branch, hq, all }
+
+/// 기능별 접근 범위 구분 (고객사/프론티어/대시보드)
+/// 접근레벨 정의:
+/// - 일반: 고객사(소속 본부 단위 조회), 프론티어(본인만 조회), 대시보드(전체 조회)
+/// - 스탭: 고객사(소속 본부 단위 조회), 프론티어(소속 본부 단위 조회), 대시보드(전체 조회)
+/// - 관리자: 고객사(전체 조회), 프론티어(전체 조회), 대시보드(전체 조회)
+enum AccessFeature {
+  customer,
+  frontier,
+  dashboard,
+}

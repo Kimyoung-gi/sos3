@@ -55,21 +55,12 @@ class CustomerRepository {
     await prefs.setString(_key, jsonEncode(customers.map((e) => e.toJson()).toList()));
   }
 
-  /// RBAC: 로그인 사용자 권한에 따라 조회 범위 적용
-  /// Admin 사용자는 필터링을 건너뛰고 전체 고객을 반환
+  /// RBAC: 고객사 기능 접근레벨 적용 (일반/스탭=본부, 관리자=전체)
   Future<List<Customer>> getFiltered(User? user) async {
     final all = await _loadAll();
-    debugPrint('🔍 [RBAC] getFiltered 내부 - 전체 고객 수: ${all.length}건, 사용자: ${user?.id ?? "null"}, Role: ${user?.role}');
-    
-    // Admin 사용자는 항상 ALL 권한으로 처리 (필터링 건너뛰기)
-    if (user != null && user.role == UserRole.admin) {
-      debugPrint('✅ [RBAC] Admin 사용자 감지 - 필터링 건너뛰고 전체 고객 반환 (${all.length}건)');
-      return List<Customer>.from(all);
-    }
-    
-    debugPrint('⚠️ [RBAC] Admin이 아님 - PermissionService.filterByScope 호출');
-    final filtered = PermissionService.filterByScope(user, all);
-    debugPrint('🔍 [RBAC] filterByScope 결과: ${filtered.length}건');
+    debugPrint('🔍 [RBAC] getFiltered(고객사) - 전체: ${all.length}건, 사용자: ${user?.id ?? "null"}, Role: ${user?.role}');
+    final filtered = PermissionService.filterByScope(user, all, feature: AccessFeature.customer);
+    debugPrint('🔍 [RBAC] filterByScope(고객사) 결과: ${filtered.length}건');
     return filtered;
   }
 

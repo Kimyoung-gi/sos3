@@ -41,6 +41,7 @@ import 'repositories/customer_repository.dart';
 import 'repositories/sales_status_repository.dart';
 import 'repositories/performance_repository.dart';
 import 'repositories/upload_history_repository.dart';
+import 'services/permission_service.dart';
 import 'utils/customer_converter.dart';
 import 'utils/csv_parser_extended.dart';
 import 'ui/pages/login_page.dart';
@@ -99,10 +100,14 @@ void main() async {
     debugPrint('⚠️ Firestore users 조회 실패: $e');
   }
   
+  // [HOME] 홈 전체보기 → 더보기 탭 특정 메뉴 연동용
+  final moreNavIntent = MoreNavIntent();
+
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: authService),
+        ChangeNotifierProvider.value(value: moreNavIntent),
         Provider.value(value: UserRepository()),
         Provider.value(value: CustomerRepository()),
         Provider.value(value: SalesStatusRepository()),
@@ -112,6 +117,20 @@ void main() async {
       child: const SOSApp(),
     ),
   );
+}
+
+/// [HOME] 홈에서 "전체보기" 탭 시 더보기 탭으로 이동 후 특정 서브 메뉴 열기용
+class MoreNavIntent extends ChangeNotifier {
+  String? _pendingRoute;
+  String? get pendingRoute => _pendingRoute;
+  void goToMore(String route) {
+    _pendingRoute = route;
+    notifyListeners();
+  }
+  void clear() {
+    _pendingRoute = null;
+    notifyListeners();
+  }
 }
 
 // ========================================
@@ -222,13 +241,27 @@ GoRouter createRouter(AuthService authService) {
           ),
           GoRoute(
             path: '/main',
-            builder: (context, state) => const MainNavigationScreen(),
+            builder: (context, state) {
+              final intent = context.read<MoreNavIntent>();
+              final pending = intent.pendingRoute;
+              return MainNavigationScreen(
+                initialTab: pending != null ? 4 : 0,
+                pendingMoreRoute: pending,
+                onClearPendingRoute: intent.clear,
+              );
+            },
           ),
           GoRoute(
             path: '/main/:tab',
             builder: (context, state) {
               final tab = state.pathParameters['tab'] ?? '0';
-              return MainNavigationScreen(initialTab: int.tryParse(tab) ?? 0);
+              final intent = context.read<MoreNavIntent>();
+              final pending = intent.pendingRoute;
+              return MainNavigationScreen(
+                initialTab: pending != null ? 4 : (int.tryParse(tab) ?? 0),
+                pendingMoreRoute: pending,
+                onClearPendingRoute: intent.clear,
+              );
             },
           ),
         ],
@@ -280,8 +313,16 @@ class SOSApp extends StatelessWidget {
 // ========================================
 class MainNavigationScreen extends StatefulWidget {
   final int initialTab;
-  
-  const MainNavigationScreen({super.key, this.initialTab = 0});
+  /// [HOME] 홈 전체보기에서 더보기 탭으로 진입 시 열 서브 메뉴 (favorites / recent / contract_expiring)
+  final String? pendingMoreRoute;
+  final VoidCallback? onClearPendingRoute;
+
+  const MainNavigationScreen({
+    super.key,
+    this.initialTab = 0,
+    this.pendingMoreRoute,
+    this.onClearPendingRoute,
+  });
 
   @override
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
@@ -391,7 +432,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           CustomerListPage(), // 고객사
           FrontierHqSelectionScreen(), // 프론티어
           DashboardScreen(), // 대시보드
-          MoreScreen(navigatorKey: _moreNavigatorKey), // 더보기
+          MoreScreen(
+            navigatorKey: _moreNavigatorKey,
+            pendingRoute: widget.pendingMoreRoute,
+            onClearPendingRoute: widget.onClearPendingRoute,
+          ), // 더보기
         ],
       ),
       bottomNavigationBar: CustomBottomNav(
@@ -2979,7 +3024,6 @@ class _FrontierHqSelectionScreenState extends State<FrontierHqSelectionScreen> {
   static const List<String> _hqList = ['전체', '강북', '강남', '강서', '동부', '서부'];
   String? _selectedHq;
   List<FrontierData> _allFrontiers = [];
-  List<FrontierData> _filteredFrontiers = [];
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   bool _isLoading = true;
@@ -3015,7 +3059,6 @@ class _FrontierHqSelectionScreenState extends State<FrontierHqSelectionScreen> {
       
       setState(() {
         _allFrontiers = frontiers;
-        _filteredFrontiers = frontiers;
         _isLoading = false;
         _errorMessage = null;
       });
@@ -3090,29 +3133,41 @@ class _FrontierHqSelectionScreenState extends State<FrontierHqSelectionScreen> {
   }
 
   void _applyFilters() {
-    List<FrontierData> filtered = List.from(_allFrontiers);
-    
-    // 이름 검색
-    final q = _searchQuery.toLowerCase();
-    if (q.isNotEmpty) {
-      filtered = filtered.where((f) => f.name.toLowerCase().contains(q)).toList();
-    }
+    setState(() {});
+  }
 
-    // 본부 필터 (고객사와 동일: 본부명 앞 2글자 매칭)
+  /// 접근레벨(일반=본인, 스탭=본부, 관리자=전체) + 검색 + 본부 칩 적용한 표시 목록
+  List<FrontierData> _getDisplayedFrontiers(BuildContext context) {
+    final user = context.read<AuthService>().currentUser;
+    final scope = user != null
+        ? PermissionService.effectiveScopeFor(user.role, AccessFeature.frontier)
+        : UserScope.all;
+    List<FrontierData> list = List.from(_allFrontiers);
+    if (user != null) {
+      if (scope == UserScope.self) {
+        list = list.where((f) => _normalizeName(f.name) == _normalizeName(user.name)).toList();
+      } else if (scope == UserScope.hq) {
+        list = list.where((f) => PermissionService.normalizeHq(f.hq) == PermissionService.normalizeHq(user.hq)).toList();
+      }
+    }
+    final q = _searchQuery.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      list = list.where((f) => f.name.toLowerCase().contains(q)).toList();
+    }
     if (_selectedHq != null && _selectedHq != '전체') {
-      filtered = filtered.where((f) {
+      list = list.where((f) {
         final hqPrefix = f.hq.length >= 2 ? f.hq.substring(0, 2) : f.hq;
         return hqPrefix == _selectedHq;
       }).toList();
     }
-    
-    setState(() {
-      _filteredFrontiers = filtered;
-    });
+    return list;
   }
+
+  static String _normalizeName(String s) => s.trim().toLowerCase();
 
   @override
   Widget build(BuildContext context) {
+    final displayedFrontiers = _getDisplayedFrontiers(context);
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -3231,7 +3286,7 @@ class _FrontierHqSelectionScreenState extends State<FrontierHqSelectionScreen> {
                           ),
                         ),
                       )
-                    : _filteredFrontiers.isEmpty
+                    : displayedFrontiers.isEmpty
                         ? Center(
                             child: Text(
                               '프론티어가 없습니다',
@@ -3243,9 +3298,9 @@ class _FrontierHqSelectionScreenState extends State<FrontierHqSelectionScreen> {
                               horizontal: AppDimens.pagePadding,
                               vertical: 8,
                             ),
-                            itemCount: _filteredFrontiers.length,
+                            itemCount: displayedFrontiers.length,
                             itemBuilder: (context, index) {
-                              final frontier = _filteredFrontiers[index];
+                              final frontier = displayedFrontiers[index];
                               return Container(
                                 margin: const EdgeInsets.only(bottom: 12),
                                 decoration: BoxDecoration(
@@ -9097,12 +9152,270 @@ class _ODScreenState extends State<ODScreen> {
 }
 
 // ========================================
+// 약정만료 예정 화면 (당일 기준 -1개월 ~ +1개월, 개통일+36개월 기준)
+// ========================================
+class ContractExpiringScreen extends StatefulWidget {
+  const ContractExpiringScreen({super.key});
+
+  @override
+  State<ContractExpiringScreen> createState() => _ContractExpiringScreenState();
+}
+
+class _ContractExpiringScreenState extends State<ContractExpiringScreen> {
+  List<CustomerData> _customers = [];
+  bool _isLoading = true;
+
+  static DateTime? _parseOpenDate(String openedAt) {
+    if (openedAt.isEmpty) return null;
+    final normalized = openedAt.replaceAll(RegExp(r'[^0-9]'), '');
+    if (normalized.length < 8) return null;
+    final y = int.tryParse(normalized.substring(0, 4));
+    final m = int.tryParse(normalized.substring(4, 6));
+    final d = int.tryParse(normalized.substring(6, 8));
+    if (y == null || m == null || d == null) return null;
+    return DateTime(y, m, d);
+  }
+
+  static DateTime addMonths(DateTime d, int months) {
+    return DateTime(d.year, d.month + months, d.day);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final authService = context.read<AuthService>();
+      final customerRepo = context.read<CustomerRepository>();
+      final user = authService.currentUser;
+      final list = await customerRepo.getFiltered(user);
+      final dataList = CustomerConverter.toCustomerDataList(list);
+      final now = DateTime.now();
+      final start = DateTime(now.year, now.month, 1).subtract(const Duration(days: 31));
+      final end = now.add(const Duration(days: 31));
+      final withExpiry = <CustomerData>[];
+      for (final c in dataList) {
+        final open = _parseOpenDate(c.openedAt);
+        if (open == null) continue;
+        final expiry = addMonths(open, 36);
+        if (!expiry.isBefore(start) && !expiry.isAfter(end)) {
+          withExpiry.add(c);
+        }
+      }
+      withExpiry.sort((a, b) {
+        final ea = addMonths(_parseOpenDate(a.openedAt) ?? DateTime(0), 36);
+        final eb = addMonths(_parseOpenDate(b.openedAt) ?? DateTime(0), 36);
+        return ea.compareTo(eb);
+      });
+      if (mounted) setState(() {
+        _customers = withExpiry;
+        _isLoading = false;
+      });
+    } catch (e) {
+      debugPrint('약정만료 예정 로드 오류: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mainState = context.findAncestorStateOfType<_MainNavigationScreenState>();
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 1,
+        title: const Text('약정만료 예정', style: TextStyle(color: Color(0xFF1A1A1A), fontWeight: FontWeight.bold)),
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+              child: Text(
+                '약정만료 예정 고객 ${_customers.length}건',
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A)),
+              ),
+            ),
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _customers.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.event_busy, size: 64, color: Colors.grey[300]),
+                              const SizedBox(height: 16),
+                              Text('해당 기간 약정만료 예정 고객이 없습니다', style: TextStyle(fontSize: 16, color: Colors.grey[600])),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                          itemCount: _customers.length,
+                          itemBuilder: (context, index) {
+                            final customer = _customers[index];
+                            return _CustomerCard(
+                              customer: customer,
+                              isFavorite: mainState?.isFavorite(customer.customerKey) ?? false,
+                              onFavoriteToggle: () {
+                                mainState?.toggleFavorite(customer.customerKey).then((_) => setState(() {}));
+                              },
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (context) => CustomerDetailScreen(
+                                      customer: customer,
+                                      onFavoriteChanged: _load,
+                                    ),
+                                  ),
+                                ).then((_) => _load());
+                              },
+                            );
+                          },
+                        ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ========================================
+// 최근 등록한 고객사 전체 화면
+// ========================================
+class RecentRegisteredScreen extends StatefulWidget {
+  const RecentRegisteredScreen({super.key});
+
+  @override
+  State<RecentRegisteredScreen> createState() => _RecentRegisteredScreenState();
+}
+
+class _RecentRegisteredScreenState extends State<RecentRegisteredScreen> {
+  List<CustomerData> _customers = [];
+  bool _isLoading = true;
+
+  static int _parseOpenDate(String openedAt) {
+    if (openedAt.isEmpty) return 0;
+    final normalized = openedAt.replaceAll(RegExp(r'[^0-9]'), '');
+    if (normalized.length >= 8) return int.tryParse(normalized.substring(0, 8)) ?? 0;
+    return int.tryParse(normalized.padRight(8, '0')) ?? 0;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final authService = context.read<AuthService>();
+      final customerRepo = context.read<CustomerRepository>();
+      final user = authService.currentUser;
+      final list = await customerRepo.getFiltered(user);
+      final dataList = CustomerConverter.toCustomerDataList(list);
+      dataList.sort((a, b) => _parseOpenDate(b.openedAt).compareTo(_parseOpenDate(a.openedAt)));
+      if (mounted) setState(() {
+        _customers = dataList;
+        _isLoading = false;
+      });
+    } catch (e) {
+      debugPrint('최근 등록 고객사 로드 오류: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mainState = context.findAncestorStateOfType<_MainNavigationScreenState>();
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 1,
+        title: const Text('최근 등록한 고객사', style: TextStyle(color: Color(0xFF1A1A1A), fontWeight: FontWeight.bold)),
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+              child: Text(
+                '최근 등록한 고객사 ${_customers.length}건',
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1A1A1A)),
+              ),
+            ),
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _customers.isEmpty
+                      ? Center(
+                          child: Text('등록된 고객이 없습니다', style: TextStyle(fontSize: 16, color: Colors.grey[600])),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                          itemCount: _customers.length,
+                          itemBuilder: (context, index) {
+                            final customer = _customers[index];
+                            return _CustomerCard(
+                              customer: customer,
+                              isFavorite: mainState?.isFavorite(customer.customerKey) ?? false,
+                              onFavoriteToggle: () {
+                                mainState?.toggleFavorite(customer.customerKey).then((_) => setState(() {}));
+                              },
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (context) => CustomerDetailScreen(
+                                      customer: customer,
+                                      onFavoriteChanged: _load,
+                                    ),
+                                  ),
+                                ).then((_) => _load());
+                              },
+                            );
+                          },
+                        ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ========================================
 // 더보기 화면
 // ========================================
 class MoreScreen extends StatefulWidget {
   final GlobalKey<NavigatorState>? navigatorKey;
+  final String? pendingRoute;
+  final VoidCallback? onClearPendingRoute;
 
-  const MoreScreen({super.key, this.navigatorKey});
+  const MoreScreen({
+    super.key,
+    this.navigatorKey,
+    this.pendingRoute,
+    this.onClearPendingRoute,
+  });
 
   @override
   State<MoreScreen> createState() => _MoreScreenState();
@@ -9115,6 +9428,21 @@ class _MoreScreenState extends State<MoreScreen> {
   void initState() {
     super.initState();
     _loadFavorites();
+  }
+
+  @override
+  void didUpdateWidget(MoreScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.pendingRoute != null && widget.pendingRoute != oldWidget.pendingRoute) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _pushPendingRoute());
+    }
+  }
+
+  void _pushPendingRoute() {
+    final route = widget.pendingRoute;
+    if (route == null) return;
+    widget.onClearPendingRoute?.call();
+    widget.navigatorKey?.currentState?.pushNamed(route);
   }
 
   Future<void> _loadFavorites() async {
@@ -9154,7 +9482,9 @@ class _MoreScreenState extends State<MoreScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // 중첩 Navigator: 즐겨찾기/OD 등 서브 화면으로 갈 때도 하단 네비게이션 바 유지
+    if (widget.pendingRoute != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _pushPendingRoute());
+    }
     return Navigator(
       key: widget.navigatorKey ?? ValueKey('more_tab'),
       initialRoute: '/',
@@ -9168,6 +9498,21 @@ class _MoreScreenState extends State<MoreScreen> {
               onLoadFavorites: _loadFavorites,
             ),
           );
+        }
+        if (settings.name == 'favorites') {
+          return MaterialPageRoute(
+            builder: (_) => FavoritesScreen(
+              favoriteKeys: _favoriteCustomerKeys,
+              onToggleFavorite: toggleFavorite,
+              isFavorite: isFavorite,
+            ),
+          );
+        }
+        if (settings.name == 'recent') {
+          return MaterialPageRoute(builder: (_) => const RecentRegisteredScreen());
+        }
+        if (settings.name == 'contract_expiring') {
+          return MaterialPageRoute(builder: (_) => const ContractExpiringScreen());
         }
         return null;
       },
@@ -9284,16 +9629,23 @@ class _MoreMenuContent extends StatelessWidget {
                       title: '즐겨찾기',
                       icon: Icons.star,
                       onTap: () {
-                        // 이 Navigator는 MoreScreen 내부이므로 push 시 하단 네비 유지
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => FavoritesScreen(
-                              favoriteKeys: favoriteKeys,
-                              onToggleFavorite: toggleFavorite,
-                              isFavorite: isFavorite,
-                            ),
-                          ),
-                        ).then((_) => onLoadFavorites());
+                        Navigator.of(context).pushNamed('favorites').then((_) => onLoadFavorites());
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    _MoreCardButton(
+                      title: '약정만료 예정',
+                      icon: Icons.event_busy,
+                      onTap: () {
+                        Navigator.of(context).pushNamed('contract_expiring');
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    _MoreCardButton(
+                      title: '최근 등록한 고객사',
+                      icon: Icons.person_add_alt_1,
+                      onTap: () {
+                        Navigator.of(context).pushNamed('recent');
                       },
                     ),
                     const SizedBox(height: 16),

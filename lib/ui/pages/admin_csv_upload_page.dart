@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_dimens.dart';
 import '../../models/user.dart';
 import '../../services/auth_service.dart';
 import '../../services/csv_service.dart';
@@ -84,6 +86,47 @@ class _AdminCsvUploadPageState extends State<AdminCsvUploadPage> {
     return '${(bytes / 1024 / 1024).toStringAsFixed(2)} MB';
   }
 
+  /// 3*3 그리드, 각 행 높이는 해당 행 카드 내용에 맞춤
+  Widget _buildCsvCardGrid() {
+    const int crossAxisCount = 3;
+    const double spacing = 12;
+    final list = _csvFiles;
+    final rows = <Widget>[];
+    for (var i = 0; i < list.length; i += crossAxisCount) {
+      final rowItems = list.skip(i).take(crossAxisCount).toList();
+      rows.add(
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var j = 0; j < crossAxisCount; j++)
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      right: j < crossAxisCount - 1 ? spacing / 2 : 0,
+                      left: j > 0 ? spacing / 2 : 0,
+                      bottom: i + crossAxisCount < list.length ? spacing : 0,
+                    ),
+                    child: j < rowItems.length
+                        ? _CsvUploadCard(
+                            filename: rowItems[j],
+                            onUploadSuccess: _loadHistory,
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: rows,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
@@ -91,12 +134,12 @@ class _AdminCsvUploadPageState extends State<AdminCsvUploadPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'CSV 파일 업로드',
             style: TextStyle(
-              fontSize: 24,
+              fontSize: 22,
               fontWeight: FontWeight.bold,
-              color: Color(0xFF1A1A1A),
+              color: AppColors.textPrimary,
             ),
           ),
           const SizedBox(height: 8),
@@ -104,38 +147,22 @@ class _AdminCsvUploadPageState extends State<AdminCsvUploadPage> {
             '업로드한 CSV는 즉시 반영됩니다. 각 파일을 개별적으로 업로드하세요.',
             style: TextStyle(
               fontSize: 14,
-              color: Colors.grey[600],
+              color: AppColors.textSecondary,
             ),
           ),
           const SizedBox(height: 24),
-          // CSV 파일별 업로드 카드 (Grid)
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-              childAspectRatio: 1.2,
-            ),
-            itemCount: _csvFiles.length,
-            itemBuilder: (context, index) {
-              return _CsvUploadCard(
-                filename: _csvFiles[index],
-                onUploadSuccess: _loadHistory,
-              );
-            },
-          ),
+          // CSV 파일별 업로드 카드 (3*3 그리드, 행 높이는 기입된 텍스트/내용에 맞춤)
+          _buildCsvCardGrid(),
           // 업로드 이력
           const SizedBox(height: 32),
           const Divider(),
           const SizedBox(height: 16),
-          const Text(
+          Text(
             '최근 업로드 이력 (최대 10건)',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
-              color: Color(0xFF1A1A1A),
+              color: AppColors.textPrimary,
             ),
           ),
           const SizedBox(height: 16),
@@ -147,13 +174,26 @@ class _AdminCsvUploadPageState extends State<AdminCsvUploadPage> {
               child: Center(
                 child: Text(
                   '업로드 이력이 없습니다.',
-                  style: TextStyle(color: Colors.grey[600]),
+                  style: TextStyle(color: AppColors.textSecondary),
                 ),
               ),
             )
           else
-            Card(
-              child: Table(
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.card,
+                borderRadius: BorderRadius.circular(AppDimens.customerCardRadius),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 12,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(AppDimens.customerCardRadius),
+                child: Table(
                 columnWidths: const {
                   0: FlexColumnWidth(2),
                   1: FlexColumnWidth(2),
@@ -162,30 +202,30 @@ class _AdminCsvUploadPageState extends State<AdminCsvUploadPage> {
                   4: FlexColumnWidth(1),
                 },
                 children: [
-                  const TableRow(
+                  TableRow(
                     decoration: BoxDecoration(
-                      border: Border(bottom: BorderSide(color: Colors.grey)),
+                      border: Border(bottom: BorderSide(color: AppColors.border)),
                     ),
                     children: [
                       Padding(
-                        padding: EdgeInsets.all(12),
-                        child: Text('파일명', style: TextStyle(fontWeight: FontWeight.bold)),
+                        padding: const EdgeInsets.all(12),
+                        child: Text('파일명', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                       ),
                       Padding(
-                        padding: EdgeInsets.all(12),
-                        child: Text('업로드 시간', style: TextStyle(fontWeight: FontWeight.bold)),
+                        padding: const EdgeInsets.all(12),
+                        child: Text('업로드 시간', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                       ),
                       Padding(
-                        padding: EdgeInsets.all(12),
-                        child: Text('업로더', style: TextStyle(fontWeight: FontWeight.bold)),
+                        padding: const EdgeInsets.all(12),
+                        child: Text('업로더', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                       ),
                       Padding(
-                        padding: EdgeInsets.all(12),
-                        child: Text('크기', style: TextStyle(fontWeight: FontWeight.bold)),
+                        padding: const EdgeInsets.all(12),
+                        child: Text('크기', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                       ),
                       Padding(
-                        padding: EdgeInsets.all(12),
-                        child: Text('상태', style: TextStyle(fontWeight: FontWeight.bold)),
+                        padding: const EdgeInsets.all(12),
+                        child: Text('상태', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                       ),
                     ],
                   ),
@@ -213,7 +253,7 @@ class _AdminCsvUploadPageState extends State<AdminCsvUploadPage> {
                           children: [
                             Icon(
                               item['success'] == true ? Icons.check_circle : Icons.error,
-                              color: item['success'] == true ? Colors.green : Colors.red,
+                              color: item['success'] == true ? AppColors.statusComplete : AppColors.customerRed,
                               size: 16,
                             ),
                             const SizedBox(width: 4),
@@ -221,7 +261,7 @@ class _AdminCsvUploadPageState extends State<AdminCsvUploadPage> {
                               child: Text(
                                 item['success'] == true ? '성공' : '실패',
                                 style: TextStyle(
-                                  color: item['success'] == true ? Colors.green : Colors.red,
+                                  color: item['success'] == true ? AppColors.statusComplete : AppColors.customerRed,
                                 ),
                               ),
                             ),
@@ -232,6 +272,7 @@ class _AdminCsvUploadPageState extends State<AdminCsvUploadPage> {
                   )),
                 ],
               ),
+            ),
             ),
         ],
       ),
@@ -387,9 +428,9 @@ class _CsvUploadCardState extends State<_CsvUploadCard> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ 업로드 완료 (Firestore)'),
-            backgroundColor: Colors.green,
+          SnackBar(
+            content: const Text('✅ 업로드 완료 (Firestore)'),
+            backgroundColor: AppColors.statusComplete,
           ),
         );
       }
@@ -434,7 +475,7 @@ class _CsvUploadCardState extends State<_CsvUploadCard> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('업로드 실패: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.customerRed,
           ),
         );
       }
@@ -451,9 +492,9 @@ class _CsvUploadCardState extends State<_CsvUploadCard> {
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('양식 파일 다운로드가 시작되었습니다.'),
-            backgroundColor: Colors.green,
+          SnackBar(
+            content: const Text('양식 파일 다운로드가 시작되었습니다.'),
+            backgroundColor: AppColors.statusComplete,
           ),
         );
       }
@@ -462,7 +503,7 @@ class _CsvUploadCardState extends State<_CsvUploadCard> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('양식 다운로드 오류: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.customerRed,
           ),
         );
       }
@@ -479,7 +520,7 @@ class _CsvUploadCardState extends State<_CsvUploadCard> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('재로딩 성공! (${csvText.length} bytes)'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppColors.statusComplete,
           ),
         );
       }
@@ -488,7 +529,7 @@ class _CsvUploadCardState extends State<_CsvUploadCard> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('재로딩 실패: $e'),
-            backgroundColor: Colors.red,
+            backgroundColor: AppColors.customerRed,
           ),
         );
       }
@@ -497,10 +538,17 @@ class _CsvUploadCardState extends State<_CsvUploadCard> {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(AppDimens.customerCardRadius),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -508,22 +556,17 @@ class _CsvUploadCardState extends State<_CsvUploadCard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // 파일명 헤더
             Row(
               children: [
-                Icon(
-                  Icons.description,
-                  color: Theme.of(context).colorScheme.primary,
-                  size: 20,
-                ),
+                Icon(Icons.description, color: AppColors.customerRed, size: 20),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     widget.filename,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFF1A1A1A),
+                      color: AppColors.textPrimary,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -532,87 +575,77 @@ class _CsvUploadCardState extends State<_CsvUploadCard> {
               ],
             ),
             const SizedBox(height: 12),
-            
-            // 양식 다운로드 버튼
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
                 onPressed: _downloadTemplate,
-                icon: const Icon(Icons.download, size: 16),
-                label: const Text('양식 다운로드', style: TextStyle(fontSize: 12)),
+                icon: Icon(Icons.download, size: 16, color: AppColors.customerRed),
+                label: Text('양식 다운로드', style: TextStyle(fontSize: 12, color: AppColors.customerRed)),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: Theme.of(context).colorScheme.primary,
+                  side: BorderSide(color: AppColors.border),
                   padding: const EdgeInsets.symmetric(vertical: 8),
                 ),
               ),
             ),
             const SizedBox(height: 8),
-            
-            // 파일 선택 버튼
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
                 onPressed: _isUploading ? null : _pickFile,
-                icon: const Icon(Icons.folder_open, size: 16),
+                icon: Icon(Icons.folder_open, size: 16, color: AppColors.textSecondary),
                 label: Text(
                   _selectedFileName ?? '파일 선택',
-                  style: const TextStyle(fontSize: 12),
+                  style: TextStyle(fontSize: 12, color: AppColors.textPrimary),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: AppColors.border),
                   padding: const EdgeInsets.symmetric(vertical: 8),
                 ),
               ),
             ),
             const SizedBox(height: 8),
-            
-            // 업로드 버튼
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton.icon(
+              child: FilledButton.icon(
                 onPressed: (_isUploading || _selectedFileBytes == null) ? null : _uploadFile,
                 icon: _isUploading
                     ? const SizedBox(
                         width: 14,
                         height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
                     : const Icon(Icons.cloud_upload, size: 16),
                 label: Text(
                   _isUploading ? '업로드 중... ${_uploadProgress.toStringAsFixed(0)}%' : '업로드',
                   style: const TextStyle(fontSize: 12),
                 ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.customerRed,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppDimens.filterPillRadius)),
                 ),
               ),
             ),
-            
-            // 업로드 진행률 표시
             if (_isUploading && _uploadProgress > 0) ...[
               const SizedBox(height: 8),
               LinearProgressIndicator(
                 value: _uploadProgress / 100,
-                backgroundColor: Colors.grey[200],
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  Theme.of(context).colorScheme.primary,
-                ),
+                backgroundColor: AppColors.pillUnselectedBg,
+                valueColor: const AlwaysStoppedAnimation<Color>(AppColors.customerRed),
               ),
             ],
-            
-            // 업로드 메시지
             if (_uploadMessage != null) ...[
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: _uploadSuccess ? Colors.green[50] : Colors.red[50],
-                  borderRadius: BorderRadius.circular(6),
+                  color: _uploadSuccess ? AppColors.statusComplete.withOpacity(0.15) : AppColors.customerRed.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: _uploadSuccess ? Colors.green : Colors.red,
+                    color: _uploadSuccess ? AppColors.statusComplete : AppColors.customerRed,
                     width: 1,
                   ),
                 ),
@@ -620,7 +653,7 @@ class _CsvUploadCardState extends State<_CsvUploadCard> {
                   children: [
                     Icon(
                       _uploadSuccess ? Icons.check_circle : Icons.error,
-                      color: _uploadSuccess ? Colors.green : Colors.red,
+                      color: _uploadSuccess ? AppColors.statusComplete : AppColors.customerRed,
                       size: 14,
                     ),
                     const SizedBox(width: 6),
@@ -628,7 +661,7 @@ class _CsvUploadCardState extends State<_CsvUploadCard> {
                       child: Text(
                         _uploadMessage!,
                         style: TextStyle(
-                          color: _uploadSuccess ? Colors.green[900] : Colors.red[900],
+                          color: _uploadSuccess ? AppColors.statusComplete : AppColors.customerRed,
                           fontSize: 11,
                         ),
                         maxLines: 2,
@@ -639,18 +672,16 @@ class _CsvUploadCardState extends State<_CsvUploadCard> {
                 ),
               ),
             ],
-            
-            // 즉시 반영 테스트 버튼
             if (_uploadSuccess) ...[
               const SizedBox(height: 8),
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   onPressed: _testReload,
-                  icon: const Icon(Icons.refresh, size: 14),
-                  label: const Text('즉시 반영 테스트', style: TextStyle(fontSize: 11)),
+                  icon: Icon(Icons.refresh, size: 14, color: AppColors.customerRed),
+                  label: Text('즉시 반영 테스트', style: TextStyle(fontSize: 11, color: AppColors.customerRed)),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: Theme.of(context).colorScheme.primary,
+                    side: BorderSide(color: AppColors.border),
                     padding: const EdgeInsets.symmetric(vertical: 6),
                   ),
                 ),
