@@ -60,4 +60,5 @@ class DefaultFirebaseOptions {
     authDomain: 'sos2-49d94.firebaseapp.com',
     storageBucket: 'sos2-49d94.firebasestorage.app',
   );
+
 }
