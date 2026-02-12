@@ -22,11 +22,11 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
   final TextEditingController _customerNameController = TextEditingController();
   final TextEditingController _openDateController = TextEditingController();
   final TextEditingController _productNameController = TextEditingController();
-  final TextEditingController _sellerController = TextEditingController();
   final TextEditingController _buildingController = TextEditingController();
   final TextEditingController _memoController = TextEditingController();
   final TextEditingController _personInChargeController = TextEditingController();
-  
+  final TextEditingController _hqController = TextEditingController();
+
   // 선택값
   String? _selectedProductType;
   String? _selectedSalesStatus = '영업전';
@@ -47,11 +47,16 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final name = context.read<AuthService>().currentUser?.name ?? '';
+      final user = context.read<AuthService>().currentUser;
+      final name = user?.name ?? '';
+      final hq = user?.hq ?? '';
       if (name.isNotEmpty && _personInChargeController.text.isEmpty) {
         _personInChargeController.text = name;
-        setState(() {});
       }
+      if (hq.isNotEmpty && _hqController.text.isEmpty) {
+        _hqController.text = hq;
+      }
+      setState(() {});
     });
   }
 
@@ -60,10 +65,10 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
     _customerNameController.dispose();
     _openDateController.dispose();
     _productNameController.dispose();
-    _sellerController.dispose();
     _buildingController.dispose();
     _memoController.dispose();
     _personInChargeController.dispose();
+    _hqController.dispose();
     super.dispose();
   }
   
@@ -111,21 +116,23 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
     try {
       final repo = context.read<CustomerRepository>();
       final auth = context.read<AuthService>();
-      final currentUserName = auth.currentUser?.name ?? '';
+      final currentUser = auth.currentUser;
+      final currentUserName = currentUser?.name ?? '';
+      final currentUserHq = currentUser?.hq ?? _hqController.text.trim();
       // 담당자 미입력 시 로그인한 사용자 이름으로 설정 → SELF 권한으로 "내가 등록한 것"만 볼 수 있음
       final personInCharge = _personInChargeController.text.trim().isEmpty
           ? currentUserName
           : _personInChargeController.text.trim();
 
-      // Customer 모델 생성
+      // Customer 모델 생성 (본부=로그인 사용자 본부, 지사/실판매자는 미노출로 빈 값)
       final newCustomer = Customer(
         customerName: _customerNameController.text.trim(),
         openDate: _openDateController.text.trim().isEmpty ? '' : _openDateController.text.trim(),
         productName: _productNameController.text.trim().isEmpty ? '' : _productNameController.text.trim(),
         productType: _selectedProductType!,
-        hq: '',
+        hq: currentUserHq,
         branch: '',
-        sellerName: _sellerController.text.trim(),
+        sellerName: '',
         building: _buildingController.text.trim(),
         salesStatus: _selectedSalesStatus!,
         memo: _memoController.text.trim(),
@@ -318,6 +325,13 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
                     style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
                     decoration: _inputDecoration(labelText: '담당자', hintText: '로그인한 이름으로 자동 등록'),
                     onChanged: (_) => setState(() {}),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _hqController,
+                    readOnly: true,
+                    style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
+                    decoration: _inputDecoration(labelText: '본부', hintText: '로그인한 사용자 본부로 자동 등록'),
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
