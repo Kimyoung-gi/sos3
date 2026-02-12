@@ -376,13 +376,15 @@ class CsvParserExtended {
   }
 
   /// OD CSV 파싱 — 표준: 회사명, 사이트명, 직무, 일정, 업종, 연락처, 주소, 링크(상세링크는 이 컬럼만 사용, 다른 연동 금지), 지역, 본부
+  /// 모바일/PC 동일: 줄바꿈 정규화(\r\n→\n) 및 필드 내 \r 제거로 열 밀림 방지
   static List<OdItem> parseOd(String csv) {
     final result = <OdItem>[];
-    final lines = csv.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    final normalized = csv.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    final lines = normalized.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
     if (lines.isEmpty) return result;
 
     final first = _removeBOM(lines[0]);
-    final headers = _parseCsvLine(first).map((e) => _removeBOM(e).trim().toLowerCase()).toList();
+    final headers = _parseCsvLine(first).map((e) => _removeBOM(e).trim().replaceAll(RegExp(r'\r'), '').toLowerCase()).toList();
     int idx(String name) {
       final n = name.toLowerCase().trim();
       final i = headers.indexWhere((h) {
@@ -411,14 +413,49 @@ class CsvParserExtended {
     final regionIdx = idxAny(['지역', 'region', 'area']);
     final hqIdx = idxAny(['본부', 'hq', '본부명']);
 
+    bool looksLikePhone(String s) {
+      if (s.isEmpty) return false;
+      final digits = s.replaceAll(RegExp(r'[^\d]'), '');
+      return digits.length >= 8 && RegExp(r'01[0-9]|02|0[3-9]\d{2}').hasMatch(s);
+    }
+    bool looksLikeIndustry(String s) {
+      if (s.isEmpty) return false;
+      return s.contains('·') || (s.contains(',') && RegExp(r'[\uac00-\ud7a3]').hasMatch(s)) || s.contains('가능') || s.contains('초보');
+    }
+    String clean(String s) => s.trim().replaceAll(RegExp(r'[\r\uFEFF\u200B-\u200D\u2060]'), '');
     for (int i = 1; i < lines.length; i++) {
-      final fields = _parseCsvLine(_removeBOM(lines[i]));
-      String v(int fi) => fi >= 0 && fi < fields.length ? fields[fi].trim() : '';
+      final raw = _parseCsvLine(_removeBOM(lines[i])).map((f) => f.trim().replaceAll(RegExp(r'\r'), '')).toList();
+      String v(int fi) => fi >= 0 && fi < raw.length ? clean(raw[fi]) : '';
+      String industry = v(industryIdx);
+      String contact = v(contactIdx);
+      // 알바몬 등: 연락처 컬럼에 직종/업종 텍스트가 들어온 경우(쉼표·따옴표 파싱 차이 등) 업종으로 보정
+      if (contact.isNotEmpty && looksLikeIndustry(contact) && !looksLikePhone(contact)) {
+        if (industry.isEmpty || industry == '없음') industry = contact;
+        contact = '';
+      }
+      // 같은 행에서 전화번호 형식이 다른 컬럼에 있으면 연락처로 사용 (열 밀림 보정)
+      if (contact.isEmpty) {
+        for (final f in raw) {
+          final c = clean(f);
+          if (c.isNotEmpty && looksLikePhone(c)) {
+            contact = c;
+            break;
+          }
+        }
+      }
       String link = v(linkIdx);
       String region = v(regionIdx);
       String hq = v(hqIdx);
-      bool isUrl(String s) => s.startsWith('http://') || s.startsWith('https://');
-      // 알바몬 등: "본부" 또는 "지역" 컬럼에 상세링크 URL이 들어온 경우 링크로만 쓰고 해당 칸은 비움
+      bool isUrl(String s) {
+        final t = s.trim();
+        return t.startsWith('http://') || t.startsWith('https://');
+      }
+      // 연락처 컬럼에 URL이 들어온 경우(열 밀림): 링크로 옮기고 연락처 비움
+      if (contact.isNotEmpty && isUrl(contact)) {
+        if (link.isEmpty) link = contact;
+        contact = '';
+      }
+      // 알바몬 등: "본부" 또는 "지역" 컬럼에 상세링크 URL이 들어온 경우 링크로만 쓰고 해당 칸은 비움 (모바일 동일)
       if (link.isEmpty && isUrl(hq)) {
         link = hq;
         hq = '';
@@ -427,14 +464,24 @@ class CsvParserExtended {
         link = region;
         region = '';
       }
+      // 모바일 등에서 열이 밀려 link에 본부/지역 값이 들어간 경우: URL이 있는 쪽을 link로 보정
+      if (link.isNotEmpty && !isUrl(link)) {
+        if (isUrl(hq)) {
+          link = hq;
+          hq = '';
+        } else if (isUrl(region)) {
+          link = region;
+          region = '';
+        }
+      }
       result.add(OdItem(
         siteName: v(siteIdx),
         companyName: v(companyIdx),
         jobTitle: v(jobIdx),
         schedule: v(scheduleIdx),
         address: v(addressIdx),
-        industry: v(industryIdx),
-        contact: v(contactIdx),
+        industry: industry,
+        contact: contact,
         link: link,
         region: region,
         hq: hq,
