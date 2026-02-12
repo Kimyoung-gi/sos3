@@ -49,11 +49,13 @@ import 'ui/pages/admin_login_page.dart';
 import 'ui/pages/admin_home_page.dart';
 import 'ui/pages/customer_register_page.dart';
 import 'ui/pages/customer_list_page.dart';
+import 'ui/pages/calendar_view_page.dart';
 import 'ui/pages/od_list_page.dart';
 import 'ui/pages/home/home_page.dart';
 import 'ui/theme/app_colors.dart';
 import 'ui/theme/app_dimens.dart';
 import 'ui/widgets/custom_bottom_nav.dart';
+import 'ui/widgets/page_menu_title.dart';
 import 'ui/widgets/frame_shell.dart';
 
 void main() async {
@@ -257,6 +259,8 @@ GoRouter createRouter(AuthService authService) {
             builder: (context, state) {
               final tab = state.pathParameters['tab'] ?? '0';
               final intent = context.read<MoreNavIntent>();
+              final extra = state.extra as String?;
+              if (extra != null && extra.isNotEmpty) intent.goToMore(extra);
               final pending = intent.pendingRoute;
               return MainNavigationScreen(
                 initialTab: pending != null ? 5 : (int.tryParse(tab) ?? 0),
@@ -3219,18 +3223,8 @@ class _FrontierHqSelectionScreenState extends State<FrontierHqSelectionScreen> {
         backgroundColor: AppColors.card,
         elevation: 1,
         automaticallyImplyLeading: false,
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 12),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.groups_rounded, color: AppColors.textPrimary, size: 20),
-              const SizedBox(width: 6),
-              Text('프론티어', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-            ],
-          ),
-        ),
-        leadingWidth: 95,
+        leading: const PageMenuTitle(icon: Icons.groups_rounded, label: '프론티어'),
+        leadingWidth: 120,
         centerTitle: true,
         title: Image.asset(
           'assets/images/sos_logo.png',
@@ -3238,7 +3232,7 @@ class _FrontierHqSelectionScreenState extends State<FrontierHqSelectionScreen> {
           fit: BoxFit.contain,
           filterQuality: FilterQuality.high,
         ),
-        actions: const [SizedBox(width: 95)],
+        actions: const [SizedBox(width: 120)],
       ),
       body: Column(
         children: [
@@ -7225,18 +7219,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
         backgroundColor: Colors.white,
         elevation: 1,
         automaticallyImplyLeading: false,
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 12),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.dashboard_rounded, color: AppColors.textPrimary, size: 20),
-              const SizedBox(width: 6),
-              Text('대시보드', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-            ],
-          ),
-        ),
-        leadingWidth: 105,
+        leading: const PageMenuTitle(icon: Icons.dashboard_rounded, label: '대시보드'),
+        leadingWidth: 140,
         centerTitle: true,
         title: Image.asset(
           'assets/images/sos_logo.png',
@@ -7244,7 +7228,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
           fit: BoxFit.contain,
           filterQuality: FilterQuality.high,
         ),
-        actions: const [SizedBox(width: 105)],
+        actions: const [SizedBox(width: 140)],
       ),
       body: SafeArea(
         child: Column(
@@ -9543,6 +9527,9 @@ class _MoreScreenState extends State<MoreScreen> {
         if (settings.name == 'contract_expiring') {
           return MaterialPageRoute(builder: (_) => const ContractExpiringScreen());
         }
+        if (settings.name == 'calendar_view') {
+          return MaterialPageRoute(builder: (_) => const CalendarViewPage());
+        }
         return null;
       },
     );
@@ -9687,6 +9674,14 @@ class _MoreMenuContent extends StatelessWidget {
                       icon: Icons.event_busy,
                       onTap: () {
                         Navigator.of(context).pushNamed('contract_expiring');
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    _MoreCardButton(
+                      title: '캘린더뷰',
+                      icon: Icons.calendar_month,
+                      onTap: () {
+                        Navigator.of(context).pushNamed('calendar_view');
                       },
                     ),
                     const SizedBox(height: 16),

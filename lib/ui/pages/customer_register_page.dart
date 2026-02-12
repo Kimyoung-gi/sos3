@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../models/customer.dart';
 import '../../repositories/customer_repository.dart';
+import '../../services/auth_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_dimens.dart';
 
@@ -21,7 +22,6 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
   final TextEditingController _customerNameController = TextEditingController();
   final TextEditingController _openDateController = TextEditingController();
   final TextEditingController _productNameController = TextEditingController();
-  final TextEditingController _branchController = TextEditingController();
   final TextEditingController _sellerController = TextEditingController();
   final TextEditingController _buildingController = TextEditingController();
   final TextEditingController _memoController = TextEditingController();
@@ -29,7 +29,6 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
   
   // 선택값
   String? _selectedProductType;
-  String? _selectedHq;
   String? _selectedSalesStatus = '영업전';
   
   // 날짜
@@ -42,15 +41,25 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
   static const List<String> _productTypeOptions = [
     'Internet', 'IPTV', 'Mobile', '하이오더', 'AI로봇', '기타',
   ];
-  static const List<String> _hqOptions = ['강북', '강남', '강서', '동부', '서부'];
   static const List<String> _salesStatusOptions = ['영업전', '영업중', '영업실패', '영업성공'];
   
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final name = context.read<AuthService>().currentUser?.name ?? '';
+      if (name.isNotEmpty && _personInChargeController.text.isEmpty) {
+        _personInChargeController.text = name;
+        setState(() {});
+      }
+    });
+  }
+
   @override
   void dispose() {
     _customerNameController.dispose();
     _openDateController.dispose();
     _productNameController.dispose();
-    _branchController.dispose();
     _sellerController.dispose();
     _buildingController.dispose();
     _memoController.dispose();
@@ -78,7 +87,6 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
   bool get _isFormValid {
     return _customerNameController.text.trim().isNotEmpty &&
         _selectedProductType != null &&
-        _selectedHq != null &&
         _selectedSalesStatus != null;
   }
   
@@ -109,8 +117,8 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
         openDate: _openDateController.text.trim().isEmpty ? '' : _openDateController.text.trim(),
         productName: _productNameController.text.trim().isEmpty ? '' : _productNameController.text.trim(),
         productType: _selectedProductType!,
-        hq: _selectedHq!,
-        branch: _branchController.text.trim(),
+        hq: '',
+        branch: '',
         sellerName: _sellerController.text.trim(),
         building: _buildingController.text.trim(),
         salesStatus: _selectedSalesStatus!,
@@ -300,8 +308,9 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _personInChargeController,
+                    readOnly: true,
                     style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
-                    decoration: _inputDecoration(labelText: '담당자', hintText: '담당자 이름'),
+                    decoration: _inputDecoration(labelText: '담당자', hintText: '로그인한 이름으로 자동 등록'),
                     onChanged: (_) => setState(() {}),
                   ),
                   const SizedBox(height: 16),
@@ -330,51 +339,13 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
                   TextFormField(
                     controller: _buildingController,
                     style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
-                    decoration: _inputDecoration(labelText: '건물명'),
+                    decoration: _inputDecoration(labelText: '주소', hintText: '주소 입력 (건물명에 표시)'),
                     onChanged: (_) => setState(() {}),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
-              // 섹션 2: 판매자 정보
-              _InfoCard(
-                title: '판매자 정보',
-                children: [
-                  DropdownButtonFormField<String>(
-                    value: _selectedHq,
-                    decoration: _inputDecoration(labelText: '본부 *'),
-                    dropdownColor: AppColors.card,
-                    style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
-                    items: _hqOptions.map((hq) {
-                      return DropdownMenuItem(
-                        value: hq,
-                        child: Text(hq, style: TextStyle(color: AppColors.textPrimary)),
-                      );
-                    }).toList(),
-                    onChanged: (value) => setState(() => _selectedHq = value),
-                    validator: (value) => value == null ? '본부를 선택하세요' : null,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _branchController,
-                    style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
-                    decoration: _inputDecoration(labelText: '지사'),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _sellerController,
-                    style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
-                    decoration: _inputDecoration(
-                      labelText: '실판매자(MATE)',
-                      hintText: '예: 1108713/조태호',
-                    ),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              // 섹션 3: 영업현황
+              // 섹션 2: 영업현황
               _InfoCard(
                 title: '영업현황',
                 children: [

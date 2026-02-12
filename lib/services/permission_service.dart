@@ -4,7 +4,7 @@ import '../models/customer.dart';
 /// 권한 서비스: RBAC 기반 조회 범위 판단 (기능별 접근레벨 적용)
 class PermissionService {
   /// 기능별 접근레벨에 따른 조회 범위
-  /// 일반: 고객사=소속 본부, 프론티어=본인만, 대시보드=전체
+  /// 일반: 고객사=담당자 본인만, 프론티어=본인만, 대시보드=전체
   /// 스탭: 고객사=소속 본부, 프론티어=소속 본부, 대시보드=전체
   /// 관리자: 고객사=전체, 프론티어=전체, 대시보드=전체
   static UserScope effectiveScopeFor(UserRole role, AccessFeature feature) {
@@ -12,7 +12,9 @@ class PermissionService {
       case AccessFeature.dashboard:
         return UserScope.all;
       case AccessFeature.customer:
-        return role == UserRole.admin ? UserScope.all : UserScope.hq;
+        if (role == UserRole.admin) return UserScope.all;
+        if (role == UserRole.user) return UserScope.self;
+        return UserScope.hq;
       case AccessFeature.frontier:
         switch (role) {
           case UserRole.admin:
@@ -32,6 +34,11 @@ class PermissionService {
     if (scope == UserScope.all) return List<Customer>.from(list);
     switch (scope) {
       case UserScope.self:
+        if (feature == AccessFeature.customer) {
+          final userName = user.name.trim();
+          if (userName.isEmpty) return [];
+          return list.where((c) => _normalize(c.personInCharge) == _normalize(userName)).toList();
+        }
         final sn = user.sellerName?.trim();
         if (sn == null || sn.isEmpty) return [];
         return list.where((c) => _containsSeller(c.sellerName, sn)).toList();

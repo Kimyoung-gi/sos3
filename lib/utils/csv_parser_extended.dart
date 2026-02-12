@@ -376,16 +376,28 @@ class CsvParserExtended {
   }
 
   /// OD CSV 파싱 (사이트명, 회사명, 직무, 일정, 주소, 업종, 연락처, 링크, 지역, 본부)
+  /// 상세링크는 반드시 OD 엑셀/CSV의 "링크" 컬럼에서 가져옴
   static List<OdItem> parseOd(String csv) {
     final result = <OdItem>[];
     final lines = csv.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
     if (lines.isEmpty) return result;
 
     final first = _removeBOM(lines[0]);
-    final headers = _parseCsvLine(first).map((e) => _removeBOM(e).toLowerCase()).toList();
+    final headers = _parseCsvLine(first).map((e) => _removeBOM(e).trim().toLowerCase()).toList();
     int idx(String name) {
-      final i = headers.indexWhere((h) => h.contains(name) || name.contains(h));
+      final n = name.toLowerCase().trim();
+      final i = headers.indexWhere((h) {
+        final t = h.trim();
+        return t.contains(n) || n.contains(t) || t == n;
+      });
       return i >= 0 ? i : -1;
+    }
+    int idxAny(List<String> names) {
+      for (final name in names) {
+        final i = idx(name);
+        if (i >= 0) return i;
+      }
+      return -1;
     }
 
     final siteIdx = idx('사이트명');
@@ -395,7 +407,9 @@ class CsvParserExtended {
     final addressIdx = idx('주소');
     final industryIdx = idx('업종');
     final contactIdx = idx('연락처');
-    final linkIdx = idx('링크');
+    // OD 엑셀 파일의 "링크" 컬럼 → 상세링크 (헤더 이름 다양하게 인식, 없으면 8번째 컬럼으로 폴백)
+    int linkIdx = idxAny(['링크', '상세링크', 'url', '공고링크', '링크주소', '상세 링크', '공고 링크']);
+    if (linkIdx < 0 && headers.length >= 8) linkIdx = 7; // 표준 순서: 0~6 다음이 링크
     final regionIdx = idx('지역');
     final hqIdx = idx('본부');
 

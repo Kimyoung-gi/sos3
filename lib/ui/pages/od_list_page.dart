@@ -7,6 +7,7 @@ import '../../models/od_item.dart';
 import '../../repositories/od_repository.dart';
 import '../../services/csv_reload_bus.dart';
 import '../theme/app_colors.dart';
+import '../widgets/page_menu_title.dart';
 import '../theme/app_dimens.dart';
 
 /// OD(오디) 리스트 페이지 — 지역 검색, 카드형 목록, 주소(네이버지도)/상세링크/복사
@@ -27,8 +28,8 @@ class _OdListPageState extends State<OdListPage> {
   String? _errorMessage;
   StreamSubscription<String>? _reloadSub;
 
-  /// CSV 본부 기준: 전체 / 수도권 / 서부 / 동부
-  static const List<String> _hqList = ['전체', '수도권', '서부', '동부'];
+  /// CSV 본부 기준: 전체 / 서울 / 경기 / 인천 / 강원 / 동부 / 서부
+  static const List<String> _hqList = ['전체', '서울', '경기', '인천', '강원', '동부', '서부'];
   String? _selectedHq;
 
   @override
@@ -77,7 +78,7 @@ class _OdListPageState extends State<OdListPage> {
     final q = _searchController.text.trim().toLowerCase();
     setState(() {
       var list = _all;
-      // 본부 필터 (CSV 본부 컬럼 기준: 수도권/서부/동부)
+      // 본부 필터 (CSV 본부 컬럼 기준: 서울/경기/인천/강원/동부/서부)
       if (_selectedHq != null && _selectedHq!.isNotEmpty) {
         list = list.where((o) {
           final hq = o.hq.trim();
@@ -97,6 +98,36 @@ class _OdListPageState extends State<OdListPage> {
     });
   }
 
+  Widget _regionChip(String label) {
+    final isSelected = (label == '전체' && _selectedHq == null) || _selectedHq == label;
+    return Material(
+      color: isSelected ? AppColors.pillSelectedBg : AppColors.pillUnselectedBg,
+      borderRadius: BorderRadius.circular(AppDimens.filterPillRadius),
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            _selectedHq = label == '전체' ? null : label;
+          });
+          _applyFilter();
+        },
+        borderRadius: BorderRadius.circular(AppDimens.filterPillRadius),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: isSelected ? Colors.white : AppColors.pillUnselectedText,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -105,18 +136,8 @@ class _OdListPageState extends State<OdListPage> {
         backgroundColor: AppColors.card,
         elevation: 1,
         automaticallyImplyLeading: false,
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 12),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.work_outline_rounded, color: AppColors.textPrimary, size: 20),
-              const SizedBox(width: 6),
-              Text('OD', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-            ],
-          ),
-        ),
-        leadingWidth: 56,
+        leading: const PageMenuTitle(icon: Icons.work_outline_rounded, label: 'OD'),
+        leadingWidth: 80,
         centerTitle: true,
         title: Image.asset(
           'assets/images/sos_logo.png',
@@ -124,7 +145,7 @@ class _OdListPageState extends State<OdListPage> {
           fit: BoxFit.contain,
           filterQuality: FilterQuality.high,
         ),
-        actions: const [SizedBox(width: 56)],
+        actions: const [SizedBox(width: 80)],
       ),
       body: Column(
         children: [
@@ -159,46 +180,35 @@ class _OdListPageState extends State<OdListPage> {
               ),
             ),
           ),
-          // 본부 필터: 수도권 / 서부 / 동부 (CSV 본부 컬럼 기준)
-          SizedBox(
-            height: 44,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: AppDimens.pagePadding),
-              itemCount: _hqList.length,
-              itemBuilder: (context, index) {
-                final hq = _hqList[index];
-                final isSelected = (hq == '전체' && _selectedHq == null) || _selectedHq == hq;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: Material(
-                    color: isSelected ? AppColors.pillSelectedBg : AppColors.pillUnselectedBg,
-                    borderRadius: BorderRadius.circular(AppDimens.filterPillRadius),
-                    child: InkWell(
-                      onTap: () {
-                        setState(() {
-                          _selectedHq = hq == '전체' ? null : hq;
-                        });
-                        _applyFilter();
-                      },
-                      borderRadius: BorderRadius.circular(AppDimens.filterPillRadius),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                        child: Center(
-                          child: Text(
-                            hq,
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: isSelected ? Colors.white : AppColors.pillUnselectedText,
-                            ),
-                          ),
-                        ),
+          // 지역(본부) 필터: 5*2 그리드 — 전체/서울/경기/인천/강원/동부/서부
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppDimens.pagePadding),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    for (int i = 0; i < 5 && i < _hqList.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 8),
+                      Expanded(
+                        child: _regionChip(_hqList[i]),
                       ),
-                    ),
-                  ),
-                );
-              },
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    for (int i = 5; i < 5 + 5; i++) ...[
+                      if (i > 5) const SizedBox(width: 8),
+                      Expanded(
+                        child: i < _hqList.length
+                            ? _regionChip(_hqList[i])
+                            : const SizedBox.shrink(),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 12),
@@ -278,12 +288,16 @@ class _OdCard extends StatelessWidget {
   }
 
   Future<void> _openDetailLink(BuildContext context, String link) async {
-    // BOM·공백·제어문자 제거 (전체 보기에서 CSV 파싱/복사 시 이슈 대응)
-    final trimmed = link.trim().replaceAll(RegExp(r'[\uFEFF\u200B-\u200D\u2060]'), '');
+    // BOM·공백·제어문자 제거 (CSV 파싱/알바몬 등 외부 링크 연동 안정화)
+    final trimmed = link
+        .trim()
+        .replaceAll(RegExp(r'[\uFEFF\u200B-\u200D\u2060]'), '')
+        .replaceAll(RegExp(r'[\r\n\t]'), '');
     if (trimmed.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('상세 링크가 없습니다.')));
       return;
     }
+    // 스킴 없으면 https 추가 (알바몬 등 www.albamon.com 형태 대응)
     final urlStr = trimmed.contains(RegExp(r'^https?://')) ? trimmed : 'https://$trimmed';
     Uri? uri = Uri.tryParse(urlStr);
     if (uri == null || uri.scheme.isEmpty) {
@@ -296,8 +310,15 @@ class _OdCard extends StatelessWidget {
       return;
     }
     try {
-      // platformDefault: 웹에서는 새 탭/같은 탭, 앱에서는 외부 브라우저 (전체 보기에서도 동작하도록)
-      await launchUrl(uri, mode: LaunchMode.platformDefault);
+      // 외부 브라우저로 열기: 알바몬 등 채용 사이트가 인앱/WebView에서 막히는 경우 방지
+      final launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+        webOnlyWindowName: '_blank',
+      );
+      if (!launched && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('링크를 열 수 없습니다. 브라우저를 확인해 주세요.')));
+      }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('링크를 열 수 없습니다: $e')));
@@ -459,41 +480,38 @@ class _OdCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                // 상세링크: 터치 영역 확실히 받기 위해 InkWell로 감싸서 전체에서도 연동
-                Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: hasLink ? () => _openDetailLink(context, linkValue) : null,
-                    borderRadius: BorderRadius.circular(20),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: hasLink ? AppColors.border : Colors.grey.shade300,
+                // 상세링크: 클릭 확실히 전달되도록 GestureDetector + 넓은 터치 영역
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _openDetailLink(context, linkValue),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: hasLink ? AppColors.border : Colors.grey.shade300,
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    constraints: const BoxConstraints(minHeight: 40, minWidth: 100),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.open_in_new,
+                          size: 18,
+                          color: hasLink ? AppColors.textSecondary : Colors.grey,
                         ),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      constraints: const BoxConstraints(minHeight: 36),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.open_in_new,
-                            size: 18,
+                        const SizedBox(width: 6),
+                        Text(
+                          '상세링크',
+                          style: TextStyle(
+                            fontSize: 13,
                             color: hasLink ? AppColors.textSecondary : Colors.grey,
+                            fontWeight: FontWeight.w500,
                           ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '상세링크',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: hasLink ? AppColors.textSecondary : Colors.grey,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ),

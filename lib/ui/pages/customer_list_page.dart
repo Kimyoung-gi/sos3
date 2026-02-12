@@ -12,6 +12,7 @@ import '../../services/csv_service.dart';
 import '../../services/csv_reload_bus.dart';
 import '../../utils/csv_parser_extended.dart';
 import '../theme/app_colors.dart';
+import '../widgets/page_menu_title.dart';
 import '../theme/app_dimens.dart';
 import '../widgets/customer_card.dart';
 
@@ -46,8 +47,11 @@ class _CustomerListPageState extends State<CustomerListPage> {
   
   // 즐겨찾기 상태 관리 (MainNavigationScreen에서 가져옴)
   Set<String> _favoriteKeys = {};
-  // 탭: 0 = 검색(전체), 1 = 즐겨찾기만
+  // 탭: 0 = DB검색, 1 = 영업상태, 2 = 즐겨찾기
   int _selectedTabIndex = 0;
+  // 영업상태 탭 하위: 0=영업전, 1=영업중, 2=영업실패, 3=영업성공
+  int _selectedSalesStatusIndex = 0;
+  static const List<String> _salesStatusList = ['영업전', '영업중', '영업실패', '영업성공'];
   // 고객별 최근 영업활동 (customerKey -> 최근 활동 내용)
   Map<String, String> _recentActivities = {};
 
@@ -305,9 +309,13 @@ class _CustomerListPageState extends State<CustomerListPage> {
     });
   }
 
-  /// 탭에 따라 표시할 리스트 (검색=전체, 즐겨찾기=즐겨찾기만)
+  /// 탭에 따라 표시할 리스트 (DB검색=전체, 영업상태=상태별, 즐겨찾기=즐겨찾기만)
   List<CustomerData> get _listForDisplay {
     if (_selectedTabIndex == 1) {
+      final status = _salesStatusList[_selectedSalesStatusIndex];
+      return _filteredList.where((c) => c.salesStatus == status).toList();
+    }
+    if (_selectedTabIndex == 2) {
       return _filteredList.where((c) => _isFavorite(c.customerKey)).toList();
     }
     return _filteredList;
@@ -321,18 +329,8 @@ class _CustomerListPageState extends State<CustomerListPage> {
         backgroundColor: AppColors.card,
         elevation: 1,
         automaticallyImplyLeading: false,
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 12),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.business_rounded, color: AppColors.textPrimary, size: 20),
-              const SizedBox(width: 6),
-              Text('고객사', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-            ],
-          ),
-        ),
-        leadingWidth: 90,
+        leading: const PageMenuTitle(icon: Icons.business_rounded, label: '고객사'),
+        leadingWidth: 120,
         centerTitle: true,
         title: Image.asset(
           'assets/images/sos_logo.png',
@@ -340,7 +338,7 @@ class _CustomerListPageState extends State<CustomerListPage> {
           fit: BoxFit.contain,
           filterQuality: FilterQuality.high,
         ),
-        actions: const [SizedBox(width: 90)],
+        actions: const [SizedBox(width: 120)],
       ),
       body: Column(
         children: [
@@ -375,7 +373,7 @@ class _CustomerListPageState extends State<CustomerListPage> {
               ),
             ),
           ),
-          // 탭: DB검색 | 즐겨찾기 (열 꽉 채움)
+          // 탭: DB검색 | 영업상태 | 즐겨찾기 (열 꽉 채움)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppDimens.pagePadding),
             child: Row(
@@ -389,14 +387,60 @@ class _CustomerListPageState extends State<CustomerListPage> {
                 ),
                 Expanded(
                   child: _TabSegment(
-                    label: '즐겨찾기',
+                    label: '영업상태',
                     isSelected: _selectedTabIndex == 1,
                     onTap: () => setState(() => _selectedTabIndex = 1),
+                  ),
+                ),
+                Expanded(
+                  child: _TabSegment(
+                    label: '즐겨찾기',
+                    isSelected: _selectedTabIndex == 2,
+                    onTap: () => setState(() => _selectedTabIndex = 2),
                   ),
                 ),
               ],
             ),
           ),
+          // 영업상태 탭 선택 시: 영업전 | 영업중 | 영업실패 | 영업성공
+          if (_selectedTabIndex == 1) ...[
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppDimens.pagePadding),
+              child: Row(
+                children: List.generate(_salesStatusList.length, (i) {
+                  final label = _salesStatusList[i];
+                  final isSelected = _selectedSalesStatusIndex == i;
+                  return Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(right: i < _salesStatusList.length - 1 ? 6 : 0),
+                      child: Material(
+                        color: isSelected ? AppColors.pillSelectedBg : AppColors.pillUnselectedBg,
+                        borderRadius: BorderRadius.circular(AppDimens.filterPillRadius),
+                        child: InkWell(
+                          onTap: () => setState(() => _selectedSalesStatusIndex = i),
+                          borderRadius: BorderRadius.circular(AppDimens.filterPillRadius),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            child: Center(
+                              child: Text(
+                                label,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  color: isSelected ? Colors.white : AppColors.pillUnselectedText,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           // 본부 필터 Pills (시안: 선택 red bg white text, 미선택 light grey bg dark grey, radius 20)
           SizedBox(
@@ -473,9 +517,11 @@ class _CustomerListPageState extends State<CustomerListPage> {
                                 Icon(Icons.search_off, size: 64, color: AppColors.textSecondary),
                                 const SizedBox(height: 16),
                                 Text(
-                                  _selectedTabIndex == 1
+                                  _selectedTabIndex == 2
                                       ? '즐겨찾기한 고객이 없습니다'
-                                      : '검색 결과가 없습니다',
+                                      : _selectedTabIndex == 1
+                                          ? '${_salesStatusList[_selectedSalesStatusIndex]} 고객이 없습니다'
+                                          : '검색 결과가 없습니다',
                                   style: TextStyle(
                                     fontSize: 16,
                                     color: AppColors.textSecondary,

@@ -58,12 +58,12 @@ class HomeQuickActions extends StatelessWidget {
               },
             ),
             _QuickActionCard(
-              icon: Icons.dashboard_outlined,
-              label: '대시보드',
+              icon: Icons.calendar_month,
+              label: '캘린더뷰',
               color: const Color(0xFFF3E5F5),
               iconColor: const Color(0xFF9C27B0),
               onTap: () {
-                context.go('/main/3'); // 대시보드 탭
+                context.go('/main/5', extra: 'calendar_view');
               },
             ),
             _QuickActionCard(
