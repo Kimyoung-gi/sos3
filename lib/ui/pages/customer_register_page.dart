@@ -110,7 +110,13 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
     
     try {
       final repo = context.read<CustomerRepository>();
-      
+      final auth = context.read<AuthService>();
+      final currentUserName = auth.currentUser?.name ?? '';
+      // 담당자 미입력 시 로그인한 사용자 이름으로 설정 → SELF 권한으로 "내가 등록한 것"만 볼 수 있음
+      final personInCharge = _personInChargeController.text.trim().isEmpty
+          ? currentUserName
+          : _personInChargeController.text.trim();
+
       // Customer 모델 생성
       final newCustomer = Customer(
         customerName: _customerNameController.text.trim(),
@@ -124,7 +130,7 @@ class _CustomerRegisterPageState extends State<CustomerRegisterPage> {
         salesStatus: _selectedSalesStatus!,
         memo: _memoController.text.trim(),
         isFavorite: false,
-        personInCharge: _personInChargeController.text.trim(),
+        personInCharge: personInCharge,
       );
       
       // 중복 체크
