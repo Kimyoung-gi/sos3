@@ -287,8 +287,8 @@ class _OdCard extends StatelessWidget {
     return link.trim().replaceAll(RegExp(r'[\uFEFF\u200B-\u200D\u2060]'), '').isNotEmpty;
   }
 
+  /// 상세링크: CSV "링크" 컬럼 값만 사용. 다른 URL 연동 금지.
   Future<void> _openDetailLink(BuildContext context, String link) async {
-    // BOM·공백·제어문자 제거 (CSV 파싱/알바몬 등 외부 링크 연동 안정화)
     final trimmed = link
         .trim()
         .replaceAll(RegExp(r'[\uFEFF\u200B-\u200D\u2060]'), '')
@@ -344,18 +344,22 @@ class _OdCard extends StatelessWidget {
     return contact;
   }
 
+  static String _emptyToNone(String s) => s.trim().isEmpty ? '없음' : s.trim();
+
   void _copyToClipboard(BuildContext context) {
     final sb = StringBuffer();
-    sb.writeln(item.companyName);
-    if (item.siteName.isNotEmpty) sb.writeln('사이트명: ${item.siteName}');
-    if (item.jobTitle.isNotEmpty) sb.writeln('직무: ${item.jobTitle}');
-    if (item.schedule.isNotEmpty) sb.writeln('채용일정: ${item.schedule}');
-    if (item.address.isNotEmpty) sb.writeln('주소: ${item.address}');
-    if (item.industry.isNotEmpty) sb.writeln('업종: ${item.industry}');
-    if (item.contact.isNotEmpty) sb.writeln('연락처: ${item.contact}');
-    if (item.link.isNotEmpty) sb.writeln('링크: ${item.link}');
-    if (item.region.isNotEmpty) sb.writeln('지역: ${item.region}');
-    if (item.hq.isNotEmpty) sb.writeln('본부: ${item.hq}');
+    sb.writeln(_emptyToNone(item.companyName));
+    sb.writeln('사이트명: ${_emptyToNone(item.siteName)}');
+    sb.writeln('직무: ${_emptyToNone(item.jobTitle)}');
+    sb.writeln('일정: ${_emptyToNone(item.schedule)}');
+    sb.writeln('업종: ${_emptyToNone(item.industry)}');
+    sb.writeln('연락처: ${_emptyToNone(item.contact)}');
+    sb.writeln('주소: ${_emptyToNone(item.address)}');
+    sb.writeln('링크: ${_emptyToNone(item.link)}');
+    if (item.region.isNotEmpty || item.hq.isNotEmpty) {
+      sb.writeln('지역: ${_emptyToNone(item.region)}');
+      sb.writeln('본부: ${_emptyToNone(item.hq)}');
+    }
     Clipboard.setData(ClipboardData(text: sb.toString()));
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('복사되었습니다.')));
   }
@@ -393,7 +397,7 @@ class _OdCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    item.companyName.isEmpty ? '-' : item.companyName,
+                    item.companyName.trim().isEmpty ? '없음' : item.companyName,
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -423,30 +427,11 @@ class _OdCard extends StatelessWidget {
             const SizedBox(height: 10),
             _row('사이트명', item.siteName),
             _row('직무', item.jobTitle),
-            _row('채용일정', item.schedule),
+            _row('일정', item.schedule),
             _row('업종', item.industry),
-            _row('연락처', item.contact.isEmpty ? '연락처 없음' : _formatContactSpacing(item.contact)),
-            // 주소: "주소: 서울시 송파구 오금로~~" 형식으로 풀 주소 한 줄 표시 (연동 없음, 텍스트만)
-            if (item.address.trim().isNotEmpty) ...[
-              const SizedBox(height: 6),
-              RichText(
-                text: TextSpan(
-                  style: const TextStyle(fontSize: 13, height: 1.3),
-                  children: [
-                    const TextSpan(
-                      text: '주소: ',
-                      style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-                    ),
-                    TextSpan(
-                      text: item.address.trim(),
-                      style: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w400),
-                    ),
-                  ],
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
+            _row('연락처', item.contact.trim().isEmpty ? '없음' : _formatContactSpacing(item.contact)),
+            _row('주소', item.address),
+            // 주소는 아래 버튼으로 네이버 지도 연동
             const SizedBox(height: 12),
             // 주소(지도) / 상세링크 — 고객 메뉴 전화·문자처럼 표현
             Row(
@@ -480,38 +465,41 @@ class _OdCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                // 상세링크: 클릭 확실히 전달되도록 GestureDetector + 넓은 터치 영역
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => _openDetailLink(context, linkValue),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: hasLink ? AppColors.border : Colors.grey.shade300,
+                // 상세링크: 주소 버튼과 동일 높이(36), 마우스 오버 시 손가락 커서
+                MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _openDetailLink(context, linkValue),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: hasLink ? AppColors.border : Colors.grey.shade300,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
                       ),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    constraints: const BoxConstraints(minHeight: 40, minWidth: 100),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.open_in_new,
-                          size: 18,
-                          color: hasLink ? AppColors.textSecondary : Colors.grey,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          '상세링크',
-                          style: TextStyle(
-                            fontSize: 13,
+                      constraints: const BoxConstraints(minHeight: 36, minWidth: 100),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.open_in_new,
+                            size: 18,
                             color: hasLink ? AppColors.textSecondary : Colors.grey,
-                            fontWeight: FontWeight.w500,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 6),
+                          Text(
+                            '상세링크',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: hasLink ? AppColors.textSecondary : Colors.grey,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -523,8 +511,9 @@ class _OdCard extends StatelessWidget {
     );
   }
 
+  /// 데이터 비어있으면 "없음" 표시 (모든 채용사이트 동일 원칙)
   Widget _row(String label, String value) {
-    if (value.isEmpty) return const SizedBox.shrink();
+    final display = value.trim().isEmpty ? '없음' : value.trim();
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: RichText(
@@ -532,7 +521,7 @@ class _OdCard extends StatelessWidget {
           style: const TextStyle(fontSize: 13, color: AppColors.textPrimary, height: 1.35),
           children: [
             TextSpan(text: '$label: ', style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-            TextSpan(text: value, style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w400)),
+            TextSpan(text: display, style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w400)),
           ],
         ),
         maxLines: 2,

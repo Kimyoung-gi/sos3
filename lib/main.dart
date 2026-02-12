@@ -9692,12 +9692,6 @@ class _MoreMenuContent extends StatelessWidget {
                         Navigator.of(context).pushNamed('recent');
                       },
                     ),
-                    const SizedBox(height: 16),
-                    _MoreCardButton(
-                      title: 'OD',
-                      icon: Icons.work_outline,
-                      onTap: () => context.go('/main/4'),
-                    ),
                     // 관리자 페이지 이동 버튼 (Admin만 표시)
                     if (authService.isAdmin) ...[
                       const SizedBox(height: 16),

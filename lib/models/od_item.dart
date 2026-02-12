@@ -1,4 +1,4 @@
-/// OD(오디) 메뉴 항목 — CSV 컬럼: 사이트명, 회사명, 직무, 일정, 주소, 업종, 연락처, 링크, 지역, 본부
+/// OD(오디) 메뉴 항목 — CSV 표준: 회사명, 사이트명, 직무, 일정, 업종, 연락처, 주소, 링크(상세링크 전용). 지역/본부는 필터용.
 class OdItem {
   final String siteName;
   final String companyName;

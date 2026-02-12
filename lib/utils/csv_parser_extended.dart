@@ -375,8 +375,7 @@ class CsvParserExtended {
     return fields;
   }
 
-  /// OD CSV 파싱 (사이트명, 회사명, 직무, 일정, 주소, 업종, 연락처, 링크, 지역, 본부)
-  /// 상세링크는 반드시 OD 엑셀/CSV의 "링크" 컬럼에서 가져옴
+  /// OD CSV 파싱 — 표준: 회사명, 사이트명, 직무, 일정, 업종, 연락처, 주소, 링크(상세링크는 이 컬럼만 사용, 다른 연동 금지), 지역, 본부
   static List<OdItem> parseOd(String csv) {
     final result = <OdItem>[];
     final lines = csv.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
@@ -400,22 +399,34 @@ class CsvParserExtended {
       return -1;
     }
 
-    final siteIdx = idx('사이트명');
-    final companyIdx = idx('회사명');
-    final jobIdx = idx('직무');
-    final scheduleIdx = idx('일정');
-    final addressIdx = idx('주소');
-    final industryIdx = idx('업종');
-    final contactIdx = idx('연락처');
-    // OD 엑셀 파일의 "링크" 컬럼 → 상세링크 (헤더 이름 다양하게 인식, 없으면 8번째 컬럼으로 폴백)
+    final siteIdx = idxAny(['사이트명', 'site', 'sitename']);
+    final companyIdx = idxAny(['회사명', '회사', 'company', '기업명']);
+    final jobIdx = idxAny(['직무', 'job', '채용직무']); // 직종은 업종용으로 둠
+    final scheduleIdx = idxAny(['일정', '마감일', 'schedule', '채용일정']);
+    final addressIdx = idxAny(['주소', 'address', '상세주소', '근무지']);
+    final industryIdx = idxAny(['업종', '직종', 'industry', '업태']); // 알바몬·사람인 등 직종/업종 통일
+    final contactIdx = idxAny(['연락처', '전화', 'contact', 'phone', '연락처번호']);
     int linkIdx = idxAny(['링크', '상세링크', 'url', '공고링크', '링크주소', '상세 링크', '공고 링크']);
-    if (linkIdx < 0 && headers.length >= 8) linkIdx = 7; // 표준 순서: 0~6 다음이 링크
-    final regionIdx = idx('지역');
-    final hqIdx = idx('본부');
+    if (linkIdx < 0 && headers.length >= 8) linkIdx = 7;
+    final regionIdx = idxAny(['지역', 'region', 'area']);
+    final hqIdx = idxAny(['본부', 'hq', '본부명']);
 
     for (int i = 1; i < lines.length; i++) {
       final fields = _parseCsvLine(_removeBOM(lines[i]));
       String v(int fi) => fi >= 0 && fi < fields.length ? fields[fi].trim() : '';
+      String link = v(linkIdx);
+      String region = v(regionIdx);
+      String hq = v(hqIdx);
+      bool isUrl(String s) => s.startsWith('http://') || s.startsWith('https://');
+      // 알바몬 등: "본부" 또는 "지역" 컬럼에 상세링크 URL이 들어온 경우 링크로만 쓰고 해당 칸은 비움
+      if (link.isEmpty && isUrl(hq)) {
+        link = hq;
+        hq = '';
+      }
+      if (link.isEmpty && isUrl(region)) {
+        link = region;
+        region = '';
+      }
       result.add(OdItem(
         siteName: v(siteIdx),
         companyName: v(companyIdx),
@@ -424,9 +435,9 @@ class CsvParserExtended {
         address: v(addressIdx),
         industry: v(industryIdx),
         contact: v(contactIdx),
-        link: v(linkIdx),
-        region: v(regionIdx),
-        hq: v(hqIdx),
+        link: link,
+        region: region,
+        hq: hq,
       ));
     }
     return result;
