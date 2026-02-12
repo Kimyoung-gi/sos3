@@ -1,25 +1,105 @@
 import 'dart:convert';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/customer.dart';
 import '../models/merge_result.dart';
 import '../models/user.dart';
+import '../services/auth_service.dart';
 import '../services/permission_service.dart';
 
-/// 고객 저장소 (로컬 SharedPreferences). 나중에 서버 구현체로 교체 가능.
+/// 고객 저장소 (Firestore 기반 — PC/모바일 동기화). 실패 시 로컬 SharedPreferences 폴백/마이그레이션.
 class CustomerRepository {
   static const _key = 'sos_customers';
   static const _keyStatus = 'sos_customer_status';
   static const _keyMemo = 'sos_customer_memo';
   static const _keyFavorites = 'favorite_customer_keys';
-  /// 고객사 등록 화면에서 직접 등록한 고객의 customerKey 목록 (엑셀 다운로드 시 등록구분 표시용)
   static const _keyRegisteredKeys = 'sos_customer_registered_keys';
+
+  static const _collectionCustomers = 'customers';
+  static const _collectionUserFavorites = 'user_favorites';
+
+  final AuthService? _authService;
+
+  CustomerRepository({AuthService? authService}) : _authService = authService;
+
+  FirebaseFirestore get _firestore => FirebaseFirestore.instance;
+  CollectionReference<Map<String, dynamic>> get _customersRef =>
+      _firestore.collection(_collectionCustomers);
+
+  /// Firestore 문서 ID (customerKey는 | 포함 가능 → base64url 인코딩)
+  static String _docId(String customerKey) {
+    final encoded = base64UrlEncode(utf8.encode(customerKey));
+    return encoded.replaceAll('=', '_');
+  }
 
   Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
 
+  /// Firestore에서 고객 목록 로드 (동기화된 단일 소스)
   Future<List<Customer>> _loadAll() async {
+    try {
+      final snapshot = await _customersRef.get();
+      if (snapshot.docs.isEmpty) {
+        return await _migrateFromLocalIfAny();
+      }
+      final list = snapshot.docs.map((doc) {
+        final data = doc.data();
+        return Customer.fromJson(Map<String, dynamic>.from(data));
+      }).toList();
+      return list;
+    } catch (e) {
+      debugPrint('CustomerRepository Firestore _loadAll: $e');
+      return _loadAllLocal();
+    }
+  }
+
+  /// Firestore가 비어 있을 때 로컬 데이터가 있으면 Firestore로 이전
+  Future<List<Customer>> _migrateFromLocalIfAny() async {
+    final local = await _loadAllLocal();
+    if (local.isEmpty) return [];
+    try {
+      final chunks = _batchChunk(local, 500);
+      for (final chunk in chunks) {
+        final writeBatch = _firestore.batch();
+        for (final c in chunk) {
+          writeBatch.set(_customersRef.doc(_docId(c.customerKey)), _toFirestoreData(c, source: 'csv'));
+        }
+        await writeBatch.commit();
+      }
+      final prefs = await _prefs();
+      await prefs.remove(_key);
+      await prefs.remove(_keyStatus);
+      await prefs.remove(_keyMemo);
+      final favList = await getFavorites();
+      for (final k in favList) {
+        await _setFavoriteInFirestore(k, true);
+      }
+      debugPrint('✅ 로컬 고객 데이터 Firestore 마이그레이션 완료: ${local.length}건');
+      return local;
+    } catch (e) {
+      debugPrint('CustomerRepository 마이그레이션 실패: $e');
+      return local;
+    }
+  }
+
+  List<List<Customer>> _batchChunk(List<Customer> list, int size) {
+    final result = <List<Customer>>[];
+    for (var i = 0; i < list.length; i += size) {
+      result.add(list.sublist(i, (i + size).clamp(0, list.length)));
+    }
+    return result;
+  }
+
+  Map<String, dynamic> _toFirestoreData(Customer c, {String source = 'csv'}) {
+    final map = c.toJson();
+    map['customerKey'] = c.customerKey;
+    map['source'] = source;
+    return map;
+  }
+
+  Future<List<Customer>> _loadAllLocal() async {
     final prefs = await _prefs();
     final raw = prefs.getString(_key);
     if (raw == null || raw.isEmpty) return [];
@@ -32,10 +112,10 @@ class CustomerRepository {
       final favList = prefs.getStringList(_keyFavorites);
       final favSet = favList != null ? favList.toSet() : <String>{};
       final Map<String, String> status = statusMap != null && statusMap.isNotEmpty
-          ? (jsonDecode(statusMap) as Map<String, dynamic>?)?.map((k, v) => MapEntry(k as String, v?.toString() ?? '')) ?? {}
+          ? (jsonDecode(statusMap) as Map<String, dynamic>?)?.map((k, v) => MapEntry(k.toString(), v?.toString() ?? '')) ?? {}
           : {};
       final Map<String, String> memo = memoMap != null && memoMap.isNotEmpty
-          ? (jsonDecode(memoMap) as Map<String, dynamic>?)?.map((k, v) => MapEntry(k as String, v?.toString() ?? '')) ?? {}
+          ? (jsonDecode(memoMap) as Map<String, dynamic>?)?.map((k, v) => MapEntry(k.toString(), v?.toString() ?? '')) ?? {}
           : {};
       customers = customers.map((c) {
         var next = c;
@@ -47,19 +127,48 @@ class CustomerRepository {
       }).toList();
       return customers;
     } catch (e) {
-      debugPrint('CustomerRepository._loadAll: $e');
+      debugPrint('CustomerRepository._loadAllLocal: $e');
       return [];
     }
   }
 
+  /// Firestore에 고객 목록 저장 (전체 교체)
   Future<void> _saveAll(List<Customer> customers) async {
-    final prefs = await _prefs();
-    await prefs.setString(_key, jsonEncode(customers.map((e) => e.toJson()).toList()));
+    try {
+      if (customers.isEmpty) {
+        final snapshot = await _customersRef.limit(1).get();
+        if (snapshot.docs.isNotEmpty) {
+          final batch = _firestore.batch();
+          final all = await _customersRef.get();
+          for (final doc in all.docs) batch.delete(doc.reference);
+          await batch.commit();
+        }
+        return;
+      }
+      final batches = _batchChunk(customers, 500);
+      for (final chunk in batches) {
+        final batch = _firestore.batch();
+        for (final c in chunk) {
+          final docId = _docId(c.customerKey);
+          batch.set(_customersRef.doc(docId), _toFirestoreData(c, source: 'csv'));
+        }
+        await batch.commit();
+      }
+    } catch (e) {
+      debugPrint('CustomerRepository Firestore _saveAll: $e');
+      final prefs = await _prefs();
+      await prefs.setString(_key, jsonEncode(customers.map((e) => e.toJson()).toList()));
+    }
   }
 
   /// RBAC: 고객사 기능 접근레벨 적용 (일반/스탭=본부, 관리자=전체)
   Future<List<Customer>> getFiltered(User? user) async {
-    final all = await _loadAll();
+    var all = await _loadAll();
+    final userId = _authService?.currentUser?.id;
+    if (userId != null) {
+      final favKeys = await _getFavoritesFromFirestore(userId);
+      all = all.map((c) => favKeys.contains(c.customerKey) ? c.copyWith(isFavorite: true) : c).toList();
+    }
     debugPrint('🔍 [RBAC] getFiltered(고객사) - 전체: ${all.length}건, 사용자: ${user?.id ?? "null"}, Role: ${user?.role}');
     final filtered = PermissionService.filterByScope(user, all, feature: AccessFeature.customer);
     debugPrint('🔍 [RBAC] filterByScope(고객사) 결과: ${filtered.length}건');
@@ -70,51 +179,52 @@ class CustomerRepository {
 
   Future<void> saveAll(List<Customer> list) => _saveAll(list);
 
-  /// 고객 데이터 완전 삭제 (CSV 교체 시 사용)
+  /// 고객 데이터 완전 삭제 (Firestore에서 삭제, 500건 단위 배치)
   Future<void> clearCustomers() async {
+    try {
+      final snapshot = await _customersRef.get();
+      final docs = snapshot.docs;
+      for (var i = 0; i < docs.length; i += 500) {
+        final batch = _firestore.batch();
+        final end = (i + 500).clamp(0, docs.length);
+        for (var j = i; j < end; j++) batch.delete(docs[j].reference);
+        await batch.commit();
+      }
+      debugPrint('🗑️ CustomerRepository: Firestore 고객 데이터 삭제 완료');
+    } catch (e) {
+      debugPrint('CustomerRepository clearCustomers: $e');
+    }
     final prefs = await _prefs();
     await prefs.remove(_key);
-    debugPrint('🗑️ CustomerRepository: 모든 고객 데이터 삭제 완료');
   }
 
-  /// CSV 파싱 결과로 완전 교체 (기존 데이터 삭제 후 새 데이터 저장)
-  /// status, memo, favorites는 유지 (기존 키와 매칭되는 경우)
+  /// CSV 파싱 결과로 완전 교체 (Firestore에 저장, status/memo/favorites 유지)
   Future<MergeResult> replaceFromCsv(List<Customer> parsed) async {
-    // 로딩 전 기존 count
     final existingBefore = await _loadAll();
     final beforeCount = existingBefore.length;
     debugPrint('📊 [REPLACE] 로딩 전 기존 고객 수: $beforeCount건');
 
-    // 기존 status, memo, favorites 백업
-    final statusRaw = await _prefs().then((p) => p.getString(_keyStatus));
-    final memoRaw = await _prefs().then((p) => p.getString(_keyMemo));
-    final favList = await getFavorites();
-    final statusMap = statusRaw != null && statusRaw.isNotEmpty
-        ? (jsonDecode(statusRaw) as Map<String, dynamic>?)?.map((k, v) => MapEntry(k as String, v?.toString() ?? '')) ?? {}
-        : <String, String>{};
-    final memoMap = memoRaw != null && memoRaw.isNotEmpty
-        ? (jsonDecode(memoRaw) as Map<String, dynamic>?)?.map((k, v) => MapEntry(k as String, v?.toString() ?? '')) ?? {}
-        : <String, String>{};
+    final statusMap = <String, String>{};
+    final memoMap = <String, String>{};
+    final favSet = await getFavorites();
+    for (final c in existingBefore) {
+      statusMap[c.customerKey] = c.salesStatus;
+      memoMap[c.customerKey] = c.memo;
+    }
 
-    // 기존 데이터 완전 삭제
     await clearCustomers();
-    debugPrint('🗑️ [REPLACE] clear 후 고객 수: 0건');
 
-    // 새 데이터에 기존 status, memo, favorites 적용
     final replaced = parsed.map((c) {
       var next = c;
       final k = c.customerKey;
       if (statusMap[k] != null) next = next.copyWith(salesStatus: statusMap[k]!);
       if (memoMap[k] != null) next = next.copyWith(memo: memoMap[k]!);
-      if (favList.contains(k)) next = next.copyWith(isFavorite: true);
+      if (favSet.contains(k)) next = next.copyWith(isFavorite: true);
       return next;
     }).toList();
 
-    // 새 데이터 저장
     await _saveAll(replaced);
-    
-    final afterCount = replaced.length;
-    debugPrint('✅ [REPLACE] 로딩 후 고객 수: $afterCount건 (기존: $beforeCount건 → 새: $afterCount건)');
+    debugPrint('✅ [REPLACE] Firestore 고객 수: ${replaced.length}건');
 
     return MergeResult(
       total: parsed.length,
@@ -127,71 +237,119 @@ class CustomerRepository {
   }
 
   Future<void> setStatus(String customerKey, String status) async {
-    final prefs = await _prefs();
-    final raw = prefs.getString(_keyStatus);
-    final m = raw != null && raw.isNotEmpty ? (jsonDecode(raw) as Map<String, dynamic>?) ?? {} : <String, dynamic>{};
-    m[customerKey] = status;
-    await prefs.setString(_keyStatus, jsonEncode(m));
+    try {
+      final docId = _docId(customerKey);
+      await _customersRef.doc(docId).update({'salesStatus': status});
+    } catch (e) {
+      debugPrint('CustomerRepository setStatus Firestore: $e');
+      final prefs = await _prefs();
+      final raw = prefs.getString(_keyStatus);
+      final m = raw != null && raw.isNotEmpty ? (jsonDecode(raw) as Map<String, dynamic>?) ?? {} : <String, dynamic>{};
+      m[customerKey] = status;
+      await prefs.setString(_keyStatus, jsonEncode(m));
+    }
   }
 
   Future<void> setMemo(String customerKey, String memo) async {
-    final prefs = await _prefs();
-    final raw = prefs.getString(_keyMemo);
-    final m = raw != null && raw.isNotEmpty ? (jsonDecode(raw) as Map<String, dynamic>?) ?? {} : <String, dynamic>{};
-    m[customerKey] = memo;
-    await prefs.setString(_keyMemo, jsonEncode(m));
+    try {
+      final docId = _docId(customerKey);
+      await _customersRef.doc(docId).update({'memo': memo});
+    } catch (e) {
+      debugPrint('CustomerRepository setMemo Firestore: $e');
+      final prefs = await _prefs();
+      final raw = prefs.getString(_keyMemo);
+      final m = raw != null && raw.isNotEmpty ? (jsonDecode(raw) as Map<String, dynamic>?) ?? {} : <String, dynamic>{};
+      m[customerKey] = memo;
+      await prefs.setString(_keyMemo, jsonEncode(m));
+    }
+  }
+
+  Future<void> _setFavoriteInFirestore(String customerKey, bool value) async {
+    final userId = _authService?.currentUser?.id;
+    if (userId == null) return;
+    final ref = _firestore.collection(_collectionUserFavorites).doc(userId);
+    final snapshot = await ref.get();
+    final Set<String> keys = snapshot.exists && snapshot.data() != null
+        ? (snapshot.data()!['keys'] as List<dynamic>?)?.map((e) => e.toString()).toSet() ?? {}
+        : {};
+    if (value) keys.add(customerKey); else keys.remove(customerKey);
+    await ref.set({'keys': keys.toList()});
+  }
+
+  Future<Set<String>> _getFavoritesFromFirestore(String userId) async {
+    try {
+      final snapshot = await _firestore.collection(_collectionUserFavorites).doc(userId).get();
+      if (!snapshot.exists || snapshot.data() == null) return {};
+      final list = snapshot.data()!['keys'] as List<dynamic>?;
+      return list?.map((e) => e.toString()).toSet() ?? {};
+    } catch (e) {
+      return {};
+    }
   }
 
   Future<void> setFavorites(Set<String> keys) async {
+    final userId = _authService?.currentUser?.id;
+    if (userId != null) {
+      try {
+        await _firestore.collection(_collectionUserFavorites).doc(userId).set({'keys': keys.toList()});
+        return;
+      } catch (e) {
+        debugPrint('CustomerRepository setFavorites Firestore: $e');
+      }
+    }
     final prefs = await _prefs();
     await prefs.setStringList(_keyFavorites, keys.toList());
   }
 
   Future<Set<String>> getFavorites() async {
+    final userId = _authService?.currentUser?.id;
+    if (userId != null) {
+      final fav = await _getFavoritesFromFirestore(userId);
+      if (fav.isNotEmpty) return fav;
+    }
     final prefs = await _prefs();
     final list = prefs.getStringList(_keyFavorites);
     return list != null ? list.toSet() : {};
   }
 
-  /// 직접 고객사 등록으로 추가/수정된 고객의 customerKey 집합 (엑셀 다운로드 등록구분용)
+  /// 직접 등록 고객 키 집합 (Firestore에서 source=='direct' 조회)
   Future<Set<String>> getRegisteredCustomerKeys() async {
-    final prefs = await _prefs();
-    final list = prefs.getStringList(_keyRegisteredKeys);
-    return list != null ? list.toSet() : {};
+    try {
+      final snapshot = await _customersRef.where('source', isEqualTo: 'direct').get();
+      return snapshot.docs
+          .map((d) => d.data()['customerKey'] as String? ?? '')
+          .where((k) => k.isNotEmpty)
+          .toSet();
+    } catch (e) {
+      final prefs = await _prefs();
+      final list = prefs.getStringList(_keyRegisteredKeys);
+      return list != null ? list.toSet() : {};
+    }
   }
 
-  /// 고객사 등록 화면에서 저장 시 해당 키를 직접등록 집합에 추가
   Future<void> addRegisteredCustomerKey(String customerKey) async {
-    final prefs = await _prefs();
-    final set = await getRegisteredCustomerKeys();
-    if (set.contains(customerKey)) return;
-    set.add(customerKey);
-    await prefs.setStringList(_keyRegisteredKeys, set.toList());
+    // createOrUpdateCustomer에서 저장 시 source: 'direct' 로 이미 저장됨
+    try {
+      final docId = _docId(customerKey);
+      await _customersRef.doc(docId).update({'source': 'direct'});
+    } catch (_) {
+      final prefs = await _prefs();
+      final set = await getRegisteredCustomerKeys();
+      if (set.contains(customerKey)) return;
+      set.add(customerKey);
+      await prefs.setStringList(_keyRegisteredKeys, set.toList());
+    }
   }
 
-  /// 중복 키: customerName|openDate|productName|sellerName
   static String _dupKey(Customer c) =>
       '${c.customerName}|${c.openDate}|${c.productName}|${c.sellerName}';
 
-  /// CSV 파싱 결과 병합. updateOnDuplicate: true=업데이트, false=스킵.
   Future<MergeResult> mergeFromCsv(List<Customer> parsed, {required bool updateOnDuplicate}) async {
     final existing = await _loadAll();
-    final existingMap = {for (final c in existing) _dupKey(c): c};
-    final statusRaw = await _prefs().then((p) => p.getString(_keyStatus));
-    final memoRaw = await _prefs().then((p) => p.getString(_keyMemo));
     final favList = await getFavorites();
-    final statusMap = statusRaw != null && statusRaw.isNotEmpty
-        ? (jsonDecode(statusRaw) as Map<String, dynamic>?)?.map((k, v) => MapEntry(k as String, v?.toString() ?? '')) ?? {}
-        : <String, String>{};
-    final memoMap = memoRaw != null && memoRaw.isNotEmpty
-        ? (jsonDecode(memoRaw) as Map<String, dynamic>?)?.map((k, v) => MapEntry(k as String, v?.toString() ?? '')) ?? {}
-        : <String, String>{};
 
-    int success = 0;
-    int skipped = 0;
-    int updated = 0;
+    int success = 0, skipped = 0, updated = 0;
     final failReasons = <String, int>{};
-
     final merged = <String, Customer>{};
     for (final c in existing) merged[_dupKey(c)] = c;
 
@@ -201,8 +359,8 @@ class CustomerRepository {
         if (updateOnDuplicate) {
           final prev = merged[k]!;
           merged[k] = c.copyWith(
-            salesStatus: statusMap[prev.customerKey] ?? prev.salesStatus,
-            memo: memoMap[prev.customerKey] ?? prev.memo,
+            salesStatus: prev.salesStatus,
+            memo: prev.memo,
             isFavorite: favList.contains(prev.customerKey),
           );
           updated++;
@@ -215,9 +373,7 @@ class CustomerRepository {
       success++;
     }
 
-    final list = merged.values.toList();
-    await _saveAll(list);
-
+    await _saveAll(merged.values.toList());
     return MergeResult(
       total: parsed.length,
       success: success,
@@ -228,10 +384,6 @@ class CustomerRepository {
     );
   }
 
-  /// 단일 고객 생성 또는 업데이트
-  /// customerKey 기반으로 중복 체크
-  /// forceUpdate: true면 중복 시 덮어쓰기, false면 중복 체크만 반환
-  /// 반환값: (성공 여부, 중복 여부, 생성된/업데이트된 Customer)
   Future<(bool success, bool isDuplicate, Customer? customer)> createOrUpdateCustomer(
     Customer newCustomer, {
     bool forceUpdate = false,
@@ -239,72 +391,34 @@ class CustomerRepository {
     try {
       final existing = await _loadAll();
       final customerKey = newCustomer.customerKey;
-      
-      // 중복 체크 (customerKey 기반)
-      final existingCustomer = existing.firstWhere(
-        (c) => c.customerKey == customerKey,
-        orElse: () => Customer(
-          customerName: '',
-          openDate: '',
-          productName: '',
-          productType: '',
-          hq: '',
-          branch: '',
-          sellerName: '',
-          building: '',
-          personInCharge: '',
-        ),
-      );
-      
-      final isDuplicate = existingCustomer.customerName.isNotEmpty;
-      
-      if (isDuplicate && !forceUpdate) {
-        // 중복이지만 덮어쓰기 안 함
-        return (false, true, null);
-      }
-      
-      // 기존 status, memo, favorites 백업
-      final statusRaw = await _prefs().then((p) => p.getString(_keyStatus));
-      final memoRaw = await _prefs().then((p) => p.getString(_keyMemo));
+      Customer? existingCustomer;
+      try {
+        existingCustomer = existing.firstWhere((c) => c.customerKey == customerKey);
+      } catch (_) {}
+
+      final isDuplicate = existingCustomer != null;
+
+      if (isDuplicate && !forceUpdate) return (false, true, null);
+
       final favList = await getFavorites();
-      final statusMap = statusRaw != null && statusRaw.isNotEmpty
-          ? (jsonDecode(statusRaw) as Map<String, dynamic>?)?.map((k, v) => MapEntry(k as String, v?.toString() ?? '')) ?? {}
-          : <String, String>{};
-      final memoMap = memoRaw != null && memoRaw.isNotEmpty
-          ? (jsonDecode(memoRaw) as Map<String, dynamic>?)?.map((k, v) => MapEntry(k as String, v?.toString() ?? '')) ?? {}
-          : <String, String>{};
-      
       Customer customerToSave;
       if (isDuplicate && forceUpdate) {
-        // 기존 데이터의 status, memo, favorite 유지하면서 업데이트
         customerToSave = newCustomer.copyWith(
-          salesStatus: statusMap[customerKey] ?? existingCustomer.salesStatus,
-          memo: memoMap[customerKey] ?? existingCustomer.memo,
+          salesStatus: existingCustomer.salesStatus,
+          memo: existingCustomer.memo,
           isFavorite: favList.contains(customerKey) || existingCustomer.isFavorite,
         );
       } else {
-        // 신규 생성 (등록 시 입력한 초기값 사용)
         customerToSave = newCustomer;
       }
-      
-      // 기존 리스트에서 중복 제거 후 새 고객 추가/업데이트
-      final updatedList = existing.where((c) => c.customerKey != customerKey).toList();
-      updatedList.add(customerToSave);
-      
-      await _saveAll(updatedList);
 
-      // 직접 고객사 등록으로 등록된 키 기록 (엑셀 다운로드 시 등록구분 표시용)
-      await addRegisteredCustomerKey(customerKey);
-      
-      // status와 memo도 함께 저장 (등록 시 입력한 값 저장)
-      if (newCustomer.salesStatus.isNotEmpty) {
-        await setStatus(customerKey, newCustomer.salesStatus);
-      }
-      if (newCustomer.memo.isNotEmpty) {
-        await setMemo(customerKey, newCustomer.memo);
-      }
-      
-      debugPrint('✅ 고객 ${isDuplicate ? "업데이트" : "생성"} 완료: $customerKey');
+      final docId = _docId(customerKey);
+      await _customersRef.doc(docId).set(_toFirestoreData(customerToSave, source: 'direct'));
+
+      if (newCustomer.salesStatus.isNotEmpty) await setStatus(customerKey, newCustomer.salesStatus);
+      if (newCustomer.memo.isNotEmpty) await setMemo(customerKey, newCustomer.memo);
+
+      debugPrint('✅ 고객 ${isDuplicate ? "업데이트" : "생성"} 완료 (Firestore): $customerKey');
       return (true, isDuplicate, customerToSave);
     } catch (e) {
       debugPrint('❌ 고객 생성/업데이트 실패: $e');
@@ -312,7 +426,6 @@ class CustomerRepository {
     }
   }
 
-  /// customerKey로 고객 조회
   Future<Customer?> getCustomerByKey(String customerKey) async {
     final all = await _loadAll();
     try {

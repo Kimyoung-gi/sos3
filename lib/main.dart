@@ -112,7 +112,7 @@ void main() async {
         ChangeNotifierProvider.value(value: authService),
         ChangeNotifierProvider.value(value: moreNavIntent),
         Provider.value(value: UserRepository()),
-        Provider.value(value: CustomerRepository()),
+        Provider(create: (c) => CustomerRepository(authService: c.read<AuthService>())),
         Provider.value(value: SalesStatusRepository()),
         Provider.value(value: PerformanceRepository()),
         Provider.value(value: UploadHistoryRepository()),
