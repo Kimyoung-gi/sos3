@@ -74,43 +74,47 @@ class _CustomerListPageState extends State<CustomerListPage> {
     super.dispose();
   }
 
-  /// 즐겨찾기 로드
+  /// 즐겨찾기 로드 (Firestore — PC/모바일 동기화)
   Future<void> _loadFavorites() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final List<String>? keys = prefs.getStringList('favorite_customer_keys');
-      if (keys != null) {
-        setState(() {
-          _favoriteKeys = keys.toSet();
-        });
-      }
+      final repo = context.read<CustomerRepository>();
+      final keys = await repo.getFavorites();
+      if (mounted) setState(() {
+        _favoriteKeys = keys;
+        _applyFilters();
+      });
     } catch (e) {
       debugPrint('즐겨찾기 로드 오류: $e');
     }
   }
 
-  /// 즐겨찾기 토글
+  /// 즐겨찾기 토글 (Firestore 저장)
   Future<void> _toggleFavorite(String customerKey) async {
+    final newSet = Set<String>.from(_favoriteKeys);
+    final added = !newSet.contains(customerKey);
+    if (added) {
+      newSet.add(customerKey);
+    } else {
+      newSet.remove(customerKey);
+    }
     setState(() {
-      if (_favoriteKeys.contains(customerKey)) {
-        _favoriteKeys.remove(customerKey);
-      } else {
-        _favoriteKeys.add(customerKey);
+      _favoriteKeys = newSet;
+      for (final c in _originalList) {
+        if (c.customerKey == customerKey) {
+          c.isFavorite = added;
+          break;
+        }
       }
     });
-    
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList('favorite_customer_keys', _favoriteKeys.toList());
+      await context.read<CustomerRepository>().setFavorites(newSet);
+      _applyFilters();
     } catch (e) {
       debugPrint('즐겨찾기 저장 오류: $e');
     }
-    
-    // 필터링 다시 적용 (즐겨찾기 정렬 반영)
-    _applyFilters();
   }
 
-  /// 즐겨찾기 상태 확인
+  /// 즐겨찾기 상태 확인 (getFiltered가 Firestore favorites 병합하므로 _favoriteKeys와 동기화)
   bool _isFavorite(String customerKey) {
     return _favoriteKeys.contains(customerKey);
   }
@@ -178,18 +182,14 @@ class _CustomerListPageState extends State<CustomerListPage> {
       // RBAC 필터링된 고객 목록 가져오기
       final customers = await customerRepo.getFiltered(currentUser);
       
-      // Customer -> CustomerData 변환
+      // Customer -> CustomerData 변환 (즐겨찾기는 getFiltered에서 Firestore 병합됨)
       final customerDataList = CustomerConverter.toCustomerDataList(customers);
-      
-      // 즐겨찾기 상태 적용
-      final customersWithFavorites = customerDataList.map((c) {
-        c.isFavorite = _isFavorite(c.customerKey);
-        return c;
-      }).toList();
+      final favKeys = customerDataList.where((c) => c.isFavorite).map((c) => c.customerKey).toSet();
       
       if (mounted) {
         setState(() {
-          _originalList = customersWithFavorites;
+          _originalList = customerDataList;
+          _favoriteKeys = favKeys;
           _isLoading = false;
           _isReloading = false;
           _isInitialLoad = false;

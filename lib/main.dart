@@ -385,22 +385,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     }
   }
   
-  // [FAV] 즐겨찾기 로컬저장 - 로드
+  // [FAV] 즐겨찾기 Firestore 로드 (PC/모바일 동기화)
   Future<void> _loadFavorites() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final List<String>? keys = prefs.getStringList('favorite_customer_keys');
-      if (keys != null) {
-        setState(() {
-          _favoriteCustomerKeys = keys.toSet();
-        });
-      }
+      final repo = context.read<CustomerRepository>();
+      final keys = await repo.getFavorites();
+      if (mounted) setState(() => _favoriteCustomerKeys = keys);
     } catch (e) {
       debugPrint('즐겨찾기 로드 오류: $e');
     }
   }
   
-  // [FAV] 즐겨찾기 토글
+  // [FAV] 즐겨찾기 토글 (Firestore 저장)
   Future<void> toggleFavorite(String customerKey) async {
     setState(() {
       if (_favoriteCustomerKeys.contains(customerKey)) {
@@ -409,14 +405,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         _favoriteCustomerKeys.add(customerKey);
       }
     });
-    await _saveFavorites();
-  }
-  
-  // [FAV] 즐겨찾기 로컬저장 - 저장
-  Future<void> _saveFavorites() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList('favorite_customer_keys', _favoriteCustomerKeys.toList());
+      await context.read<CustomerRepository>().setFavorites(_favoriteCustomerKeys);
     } catch (e) {
       debugPrint('즐겨찾기 저장 오류: $e');
     }
@@ -2344,17 +2334,27 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
     });
   }
 
-  /// 저장 버튼: status + activities 일괄 저장 후 스낵바
+  /// 저장 버튼: status + activities — Firestore(영업상태·메모 동기화) + 로컬(영업활동)
   Future<void> _saveDraft() async {
     if (_isSaving || !_isDirty) return;
     setState(() => _isSaving = true);
     try {
-      final prefs = await SharedPreferences.getInstance();
       final key = widget.customer.customerKey;
-      await prefs.setString('${key}_status', _salesStatusDraft);
+      final repo = context.read<CustomerRepository>();
+
+      // 영업상태·메모 — Firestore에 저장 (PC/모바일 동기화)
+      await repo.setStatus(key, _salesStatusDraft);
+      final memoToSync = _activitiesDraft.isNotEmpty ? _activitiesDraft.first.text : widget.customer.memo;
+      await repo.setMemo(key, memoToSync);
+
+      // 영업활동 로그 — SharedPreferences (기존 유지)
+      final prefs = await SharedPreferences.getInstance();
       final activitiesJson = jsonEncode(_activitiesDraft.map((a) => a.toJson()).toList());
       await prefs.setString('${key}_sales_activities', activitiesJson);
+
       widget.customer.salesStatus = _salesStatusDraft;
+      widget.customer.memo = memoToSync;
+
       if (mounted) {
         setState(() {
           _isDirty = false;
@@ -9460,13 +9460,9 @@ class _MoreScreenState extends State<MoreScreen> {
 
   Future<void> _loadFavorites() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final List<String>? keys = prefs.getStringList('favorite_customer_keys');
-      if (keys != null) {
-        setState(() {
-          _favoriteCustomerKeys = keys.toSet();
-        });
-      }
+      final repo = context.read<CustomerRepository>();
+      final keys = await repo.getFavorites();
+      if (mounted) setState(() => _favoriteCustomerKeys = keys);
     } catch (e) {
       debugPrint('즐겨찾기 로드 오류: $e');
     }
@@ -9480,10 +9476,8 @@ class _MoreScreenState extends State<MoreScreen> {
         _favoriteCustomerKeys.add(customerKey);
       }
     });
-    
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList('favorite_customer_keys', _favoriteCustomerKeys.toList());
+      await context.read<CustomerRepository>().setFavorites(_favoriteCustomerKeys);
     } catch (e) {
       debugPrint('즐겨찾기 저장 오류: $e');
     }
