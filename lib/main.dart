@@ -497,6 +497,8 @@ class CustomerData {
   String salesStatus;
   String memo;
   String personInCharge;
+  /// 영업활동 로그 (Firestore 동기화)
+  List<Map<String, dynamic>> salesActivities;
 
   CustomerData({
     required this.customerName,
@@ -511,6 +513,7 @@ class CustomerData {
     this.salesStatus = '영업전',
     this.memo = '',
     this.personInCharge = '',
+    this.salesActivities = const [],
   });
 
   // [FAV] 고유 키 생성 (고객사명|개통일자|상품명)
@@ -2242,23 +2245,35 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
     super.dispose();
   }
 
-  /// SharedPreferences에서 영업활동 로드. 기존 memo가 있으면 1회 마이그레이션.
+  /// Firestore에서 영업활동 로드 (PC/모바일 동기화). 없으면 SharedPreferences 마이그레이션 시도.
   Future<void> _loadActivities() async {
-    final prefs = await SharedPreferences.getInstance();
-    final key = '${widget.customer.customerKey}_sales_activities';
-    final raw = prefs.getString(key);
     final List<SalesActivityItem> list = [];
-    if (raw != null && raw.isNotEmpty) {
-      try {
-        final decoded = jsonDecode(raw) as List<dynamic>?;
-        if (decoded != null) {
-          for (final e in decoded) {
-            if (e is Map<String, dynamic>) list.add(SalesActivityItem.fromJson(e));
-          }
-        }
-      } catch (_) {}
+    // 1) Firestore (동기화된 데이터) 우선
+    final activities = widget.customer.salesActivities;
+    if (activities.isNotEmpty) {
+      for (final e in activities) {
+        try {
+          final m = Map<String, dynamic>.from(e);
+          list.add(SalesActivityItem.fromJson(m));
+        } catch (_) {}
+      }
     }
-    // 기존 memo가 있고 활동이 없으면 1회 마이그레이션
+    // 2) 마이그레이션: SharedPreferences에만 있던 데이터 → Firestore로 이전 시도
+    if (list.isEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('${widget.customer.customerKey}_sales_activities');
+      if (raw != null && raw.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(raw) as List<dynamic>?;
+          if (decoded != null) {
+            for (final e in decoded) {
+              if (e is Map<String, dynamic>) list.add(SalesActivityItem.fromJson(e));
+            }
+          }
+        } catch (_) {}
+      }
+    }
+    // 3) 기존 memo가 있고 활동이 없으면 1회 마이그레이션
     if (list.isEmpty && widget.customer.memo.trim().isNotEmpty) {
       list.add(SalesActivityItem(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -2334,7 +2349,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
     });
   }
 
-  /// 저장 버튼: status + activities — Firestore(영업상태·메모 동기화) + 로컬(영업활동)
+  /// 저장 버튼: status + activities — Firestore (PC/모바일 동기화)
   Future<void> _saveDraft() async {
     if (_isSaving || !_isDirty) return;
     setState(() => _isSaving = true);
@@ -2342,18 +2357,16 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
       final key = widget.customer.customerKey;
       final repo = context.read<CustomerRepository>();
 
-      // 영업상태·메모 — Firestore에 저장 (PC/모바일 동기화)
+      // 영업상태·메모·영업활동 — Firestore에 저장 (PC/모바일 동기화)
       await repo.setStatus(key, _salesStatusDraft);
       final memoToSync = _activitiesDraft.isNotEmpty ? _activitiesDraft.first.text : widget.customer.memo;
       await repo.setMemo(key, memoToSync);
-
-      // 영업활동 로그 — SharedPreferences (기존 유지)
-      final prefs = await SharedPreferences.getInstance();
-      final activitiesJson = jsonEncode(_activitiesDraft.map((a) => a.toJson()).toList());
-      await prefs.setString('${key}_sales_activities', activitiesJson);
+      final activitiesToSync = _activitiesDraft.map((a) => a.toJson()).toList();
+      await repo.setSalesActivities(key, activitiesToSync);
 
       widget.customer.salesStatus = _salesStatusDraft;
       widget.customer.memo = memoToSync;
+      widget.customer.salesActivities = activitiesToSync;
 
       if (mounted) {
         setState(() {

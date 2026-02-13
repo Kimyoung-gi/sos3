@@ -17,6 +17,8 @@ class Customer {
   final String personInCharge;
   /// Firestore 저장 시 등록/수정 시간 (최근 등록 정렬용)
   final DateTime? createdAt;
+  /// 영업활동 로그 (PC/모바일 동기화용)
+  final List<Map<String, dynamic>> salesActivities;
 
   const Customer({
     required this.customerName,
@@ -32,6 +34,7 @@ class Customer {
     this.isFavorite = false,
     this.personInCharge = '',
     this.createdAt,
+    this.salesActivities = const [],
   });
 
   String get customerKey => '$customerName|$openDate|$productName';
@@ -49,7 +52,18 @@ class Customer {
         'memo': memo,
         'isFavorite': isFavorite,
         'personInCharge': personInCharge,
+        'salesActivities': salesActivities,
       };
+
+  static List<Map<String, dynamic>> _parseActivities(dynamic v) {
+    if (v == null) return [];
+    if (v is! List) return [];
+    final result = <Map<String, dynamic>>[];
+    for (final e in v) {
+      if (e is Map) result.add(Map<String, dynamic>.from(e));
+    }
+    return result;
+  }
 
   static DateTime? _parseCreatedAt(dynamic v) {
     if (v == null) return null;
@@ -72,6 +86,7 @@ class Customer {
         isFavorite: j['isFavorite'] as bool? ?? false,
         personInCharge: j['personInCharge'] as String? ?? '',
         createdAt: _parseCreatedAt(j['createdAt']),
+        salesActivities: _parseActivities(j['salesActivities']),
       );
 
   Customer copyWith({
@@ -88,6 +103,7 @@ class Customer {
     bool? isFavorite,
     String? personInCharge,
     DateTime? createdAt,
+    List<Map<String, dynamic>>? salesActivities,
   }) =>
       Customer(
         customerName: customerName ?? this.customerName,
@@ -103,5 +119,6 @@ class Customer {
         isFavorite: isFavorite ?? this.isFavorite,
         personInCharge: personInCharge ?? this.personInCharge,
         createdAt: createdAt ?? this.createdAt,
+        salesActivities: salesActivities ?? this.salesActivities,
       );
 }

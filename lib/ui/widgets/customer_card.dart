@@ -10,8 +10,8 @@ class CustomerCard extends StatelessWidget {
   final bool isFavorite;
   final VoidCallback onTap;
   final VoidCallback onFavoriteToggle;
-  /// 최근 영업활동 내용 (없으면 "영업활동 없음" 표시)
-  final String? recentActivity;
+  /// 메모/영업활동 항목 (최대 2개 표시)
+  final List<String> memoItems;
 
   const CustomerCard({
     super.key,
@@ -19,7 +19,7 @@ class CustomerCard extends StatelessWidget {
     required this.isFavorite,
     required this.onTap,
     required this.onFavoriteToggle,
-    this.recentActivity,
+    this.memoItems = const [],
   });
 
   Color _getStatusColor(String status) {
@@ -45,6 +45,47 @@ class CustomerCard extends StatelessWidget {
       default:
         return status;
     }
+  }
+
+  List<Widget> _buildMemoItems() {
+    final items = memoItems.take(2).where((s) => s.trim().isNotEmpty).toList();
+    if (items.isEmpty) {
+      return [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.pillUnselectedBg.withOpacity(0.5),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            '영업활동 없음',
+            style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ];
+    }
+    return [
+      for (int i = 0; i < items.length; i++) ...[
+        if (i > 0) const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.pillUnselectedBg.withOpacity(0.5),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
+            items[i],
+            style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    ];
   }
 
   @override
@@ -130,47 +171,9 @@ class CustomerCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 10),
-                // 최근 메모 (최대 2줄, 연한 grey 박스, radius 10, 13px, ellipsis)
-                if (customer.memo.isNotEmpty)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: AppColors.pillUnselectedBg.withOpacity(0.6),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      customer.memo,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: AppColors.textSecondary,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                if (customer.memo.isNotEmpty) const SizedBox(height: 12),
-                // 영업활동 영역: 회색 음영, 하단 선으로 전화/문자와 구분
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: AppColors.pillUnselectedBg.withOpacity(0.5),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    (recentActivity != null && recentActivity!.trim().isNotEmpty)
-                        ? recentActivity!
-                        : '영업활동 없음',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: AppColors.textSecondary,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(height: 10),
+                // 메모/영업활동 (최대 2개 항목)
+                ..._buildMemoItems(),
+                const SizedBox(height: 12),
                 Divider(height: 1, thickness: 1, color: AppColors.border),
                 const SizedBox(height: 10),
                 // 전화 / 문자 버튼 + 즐겨찾기 별

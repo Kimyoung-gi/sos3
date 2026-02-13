@@ -18,6 +18,7 @@ class CustomerConverter {
       salesStatus: c.salesStatus,
       memo: c.memo,
       personInCharge: c.personInCharge,
+      salesActivities: c.salesActivities,
     );
   }
 
@@ -36,6 +37,7 @@ class CustomerConverter {
       salesStatus: cd.salesStatus,
       memo: cd.memo,
       personInCharge: cd.personInCharge,
+      salesActivities: cd.salesActivities,
     );
   }
 

@@ -195,10 +195,12 @@ class CustomerRepository {
 
     final statusMap = <String, String>{};
     final memoMap = <String, String>{};
+    final activitiesMap = <String, List<Map<String, dynamic>>>{};
     final favSet = await getFavorites();
     for (final c in existingBefore) {
       statusMap[c.customerKey] = c.salesStatus;
       memoMap[c.customerKey] = c.memo;
+      activitiesMap[c.customerKey] = c.salesActivities;
     }
 
     await clearCustomers();
@@ -208,6 +210,7 @@ class CustomerRepository {
       final k = c.customerKey;
       if (statusMap[k] != null) next = next.copyWith(salesStatus: statusMap[k]!);
       if (memoMap[k] != null) next = next.copyWith(memo: memoMap[k]!);
+      if (activitiesMap[k] != null && activitiesMap[k]!.isNotEmpty) next = next.copyWith(salesActivities: activitiesMap[k]!);
       if (favSet.contains(k)) next = next.copyWith(isFavorite: true);
       return next;
     }).toList();
@@ -235,6 +238,12 @@ class CustomerRepository {
   Future<void> setMemo(String customerKey, String memo) async {
     final docId = _docId(customerKey);
     await _customersRef.doc(docId).set({'memo': memo}, SetOptions(merge: true));
+  }
+
+  /// 영업활동 변경 — Firestore에만 저장 (PC/모바일 동기화)
+  Future<void> setSalesActivities(String customerKey, List<Map<String, dynamic>> activities) async {
+    final docId = _docId(customerKey);
+    await _customersRef.doc(docId).set({'salesActivities': activities}, SetOptions(merge: true));
   }
 
   Future<void> _setFavoriteInFirestore(String customerKey, bool value) async {
@@ -308,6 +317,7 @@ class CustomerRepository {
           merged[k] = c.copyWith(
             salesStatus: prev.salesStatus,
             memo: prev.memo,
+            salesActivities: prev.salesActivities,
             isFavorite: favList.contains(prev.customerKey),
             createdAt: prev.createdAt,
           );
@@ -354,6 +364,7 @@ class CustomerRepository {
         customerToSave = newCustomer.copyWith(
           salesStatus: existingCustomer.salesStatus,
           memo: existingCustomer.memo,
+          salesActivities: existingCustomer.salesActivities,
           isFavorite: favList.contains(customerKey) || existingCustomer.isFavorite,
         );
       } else {

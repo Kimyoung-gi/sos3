@@ -1,8 +1,6 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../repositories/customer_repository.dart';
 import '../../utils/customer_converter.dart';
@@ -52,8 +50,6 @@ class _CustomerListPageState extends State<CustomerListPage> {
   // 영업상태 탭 하위: 0=영업전, 1=영업중, 2=영업실패, 3=영업성공
   int _selectedSalesStatusIndex = 0;
   static const List<String> _salesStatusList = ['영업전', '영업중', '영업실패', '영업성공'];
-  // 고객별 최근 영업활동 (customerKey -> 최근 활동 내용)
-  Map<String, String> _recentActivities = {};
 
   @override
   void initState() {
@@ -196,7 +192,6 @@ class _CustomerListPageState extends State<CustomerListPage> {
           _errorMessage = null;
         });
         _applyFilters();
-        _loadRecentActivities();
       }
     } catch (e, stackTrace) {
       debugPrint('❌ 데이터 로딩 오류: $e');
@@ -212,42 +207,23 @@ class _CustomerListPageState extends State<CustomerListPage> {
     }
   }
 
-  /// SharedPreferences에서 고객별 최근 영업활동 로드 (카드에 표시용)
-  Future<void> _loadRecentActivities() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final keys = prefs.getKeys().where((k) => k.endsWith('_sales_activities'));
-      final Map<String, String> map = {};
-      for (final key in keys) {
-        final customerKey = key.replaceFirst(RegExp(r'_sales_activities$'), '');
-        final raw = prefs.getString(key);
-        if (raw == null || raw.isEmpty) continue;
-        try {
-          final decoded = jsonDecode(raw) as List<dynamic>?;
-          if (decoded == null || decoded.isEmpty) continue;
-          // createdAt 기준 최신 항목의 text
-          String? latestText;
-          DateTime? latestAt;
-          for (final e in decoded) {
-            if (e is! Map<String, dynamic>) continue;
-            final text = e['text'] as String? ?? '';
-            final createdAt = e['createdAt'];
-            DateTime? at;
-            if (createdAt is String) at = DateTime.tryParse(createdAt);
-            if (at != null && (latestAt == null || at.isAfter(latestAt))) {
-              latestAt = at;
-              latestText = text;
-            }
-          }
-          if (latestText != null && latestText.trim().isNotEmpty) {
-            map[customerKey] = latestText.trim();
-          }
-        } catch (_) {}
-      }
-      if (mounted) setState(() => _recentActivities = map);
-    } catch (e) {
-      debugPrint('최근 영업활동 로드 오류: $e');
+  /// 메모+영업활동 항목 최대 2개 (메모 우선, 이후 최근 영업활동 1개 — Firestore 동기화)
+  List<String> _buildMemoItems(CustomerData customer) {
+    final items = <String>[];
+    if (customer.memo.trim().isNotEmpty) items.add(customer.memo.trim());
+    // Firestore salesActivities에서 최근 1개 사용 (PC/모바일 동기화)
+    final activities = customer.salesActivities;
+    if (activities.isNotEmpty) {
+      final sorted = List<Map<String, dynamic>>.from(activities);
+      sorted.sort((a, b) {
+        final at = DateTime.tryParse(a['createdAt']?.toString() ?? '') ?? DateTime(0);
+        final bt = DateTime.tryParse(b['createdAt']?.toString() ?? '') ?? DateTime(0);
+        return bt.compareTo(at);
+      });
+      final text = (sorted.first['text'] as String? ?? '').trim();
+      if (text.isNotEmpty && items.length < 2) items.add(text);
     }
+    return items.take(2).toList();
   }
 
   /// 검색어 변경 핸들러 (debounce)
@@ -302,10 +278,9 @@ class _CustomerListPageState extends State<CustomerListPage> {
         ),
       ),
     ).then((_) {
-      // 상세 화면에서 돌아올 때 즐겨찾기·최근 영업활동 갱신
+      // 상세 화면에서 돌아올 때 즐겨찾기·고객 목록 갱신
       _loadFavorites();
-      _applyFilters();
-      _loadRecentActivities();
+      _loadCustomers();
     });
   }
 
@@ -545,7 +520,7 @@ class _CustomerListPageState extends State<CustomerListPage> {
                                   isFavorite: _isFavorite(customer.customerKey),
                                   onTap: () => _navigateToDetail(customer),
                                   onFavoriteToggle: () => _toggleFavorite(customer.customerKey),
-                                  recentActivity: _recentActivities[customer.customerKey],
+                                  memoItems: _buildMemoItems(customer),
                                 ),
                               );
                             },
