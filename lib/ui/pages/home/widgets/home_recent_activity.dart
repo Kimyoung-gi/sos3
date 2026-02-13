@@ -3,8 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
+import '../../../../models/customer.dart';
 import '../../../../repositories/customer_repository.dart';
 import '../../../../services/csv_reload_bus.dart';
 import '../../../../utils/customer_converter.dart';
@@ -53,15 +52,13 @@ class _HomeRecentActivityState extends State<HomeRecentActivity> {
       final currentUser = authService.currentUser;
 
       final customers = await customerRepo.getFiltered(currentUser);
+      // 즐겨찾기: Firestore에서 사용자별 로드 (자기꺼만)
+      final favoriteKeys = await customerRepo.getFavorites();
+      final recentFavoriteKeys = favoriteKeys.length <= 4
+          ? favoriteKeys.toList().reversed.toList()
+          : favoriteKeys.toList().reversed.take(4).toList();
       final customerDataList = CustomerConverter.toCustomerDataList(customers);
       final keyToCustomer = {for (final c in customerDataList) c.customerKey: c};
-
-      // 즐겨찾기: 저장된 순서 유지, 최근 4개(리스트 끝 4개) → 역순으로 표시
-      final prefs = await SharedPreferences.getInstance();
-      final favoriteKeys = prefs.getStringList('favorite_customer_keys') ?? [];
-      final recentFavoriteKeys = favoriteKeys.length <= 4
-          ? favoriteKeys.reversed.toList()
-          : favoriteKeys.reversed.take(4).toList();
       final favoriteCustomers = recentFavoriteKeys
           .map((key) => keyToCustomer[key])
           .whereType<CustomerData>()
@@ -73,14 +70,14 @@ class _HomeRecentActivityState extends State<HomeRecentActivity> {
       // 약정만료 예정: 당일 기준 -1개월 ~ +1개월 (개통일+36개월 기준), 최대 4개
       final expiringSoon = _filterExpiringSoon(customerDataList);
 
-      // 최근 등록한 고객사: openDate 기준 내림차순, 최대 4개
-      final sorted = List<CustomerData>.from(customerDataList)
+      // 최근 등록한 고객사: createdAt 우선, 없으면 openDate 기준 내림차순 (최신이 위로), 최대 4개
+      final sortedByTime = List<Customer>.from(customers)
         ..sort((a, b) {
-          final da = _parseOpenDate(a.openedAt);
-          final db = _parseOpenDate(b.openedAt);
-          return db.compareTo(da);
+          final ta = a.createdAt ?? _openDateToDateTime(a.openDate) ?? DateTime(0);
+          final tb = b.createdAt ?? _openDateToDateTime(b.openDate) ?? DateTime(0);
+          return tb.compareTo(ta);
         });
-      final recentRegistered = sorted.take(4).toList();
+      final recentRegistered = CustomerConverter.toCustomerDataList(sortedByTime).take(4).toList();
 
       if (mounted) {
         setState(() {
@@ -98,16 +95,6 @@ class _HomeRecentActivityState extends State<HomeRecentActivity> {
         });
       }
     }
-  }
-
-  /// openDate 문자열을 정렬용 int로 (YYYYMMDD)
-  int _parseOpenDate(String openDate) {
-    if (openDate.isEmpty) return 0;
-    final normalized = openDate.replaceAll(RegExp(r'[^0-9]'), '');
-    if (normalized.length >= 8) {
-      return int.tryParse(normalized.substring(0, 8)) ?? 0;
-    }
-    return int.tryParse(normalized.padRight(8, '0')) ?? 0;
   }
 
   static DateTime? _openDateToDateTime(String openDate) {

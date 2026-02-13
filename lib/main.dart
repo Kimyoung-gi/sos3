@@ -9326,6 +9326,15 @@ class _RecentRegisteredScreenState extends State<RecentRegisteredScreen> {
     return int.tryParse(normalized.padRight(8, '0')) ?? 0;
   }
 
+  static DateTime _openDateToDateTime(String openedAt) {
+    final n = _parseOpenDate(openedAt);
+    if (n == 0) return DateTime(0);
+    final y = n ~/ 10000;
+    final m = (n % 10000) ~/ 100;
+    final d = n % 100;
+    return DateTime(y, m, d);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -9338,8 +9347,13 @@ class _RecentRegisteredScreenState extends State<RecentRegisteredScreen> {
       final customerRepo = context.read<CustomerRepository>();
       final user = authService.currentUser;
       final list = await customerRepo.getFiltered(user);
+      // 최근 등록(createdAt) 우선, 없으면 개통일(openDate) 기준 내림차순 (최신이 위로)
+      list.sort((a, b) {
+        final ta = a.createdAt ?? _openDateToDateTime(a.openDate);
+        final tb = b.createdAt ?? _openDateToDateTime(b.openDate);
+        return tb.compareTo(ta);
+      });
       final dataList = CustomerConverter.toCustomerDataList(list);
-      dataList.sort((a, b) => _parseOpenDate(b.openedAt).compareTo(_parseOpenDate(a.openedAt)));
       if (mounted) setState(() {
         _customers = dataList;
         _isLoading = false;

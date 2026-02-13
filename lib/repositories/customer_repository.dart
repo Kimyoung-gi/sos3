@@ -85,10 +85,15 @@ class CustomerRepository {
     return result;
   }
 
-  Map<String, dynamic> _toFirestoreData(Customer c, {String source = 'csv'}) {
+  Map<String, dynamic> _toFirestoreData(Customer c, {String source = 'csv', bool setCreatedAt = false}) {
     final map = c.toJson();
     map['customerKey'] = c.customerKey;
     map['source'] = source;
+    if (setCreatedAt) {
+      map['createdAt'] = c.createdAt != null
+          ? Timestamp.fromDate(c.createdAt!)
+          : FieldValue.serverTimestamp();
+    }
     return map;
   }
 
@@ -145,7 +150,7 @@ class CustomerRepository {
       final batch = _firestore.batch();
       for (final c in chunk) {
         final docId = _docId(c.customerKey);
-        batch.set(_customersRef.doc(docId), _toFirestoreData(c, source: 'csv'));
+        batch.set(_customersRef.doc(docId), _toFirestoreData(c, source: 'csv', setCreatedAt: true));
       }
       await batch.commit();
     }
@@ -304,6 +309,7 @@ class CustomerRepository {
             salesStatus: prev.salesStatus,
             memo: prev.memo,
             isFavorite: favList.contains(prev.customerKey),
+            createdAt: prev.createdAt,
           );
           updated++;
         } else {
@@ -355,7 +361,10 @@ class CustomerRepository {
       }
 
       final docId = _docId(customerKey);
-      await _customersRef.doc(docId).set(_toFirestoreData(customerToSave, source: 'direct'));
+      await _customersRef.doc(docId).set(
+        _toFirestoreData(customerToSave, source: 'direct', setCreatedAt: !isDuplicate),
+        isDuplicate ? SetOptions(merge: true) : SetOptions(),
+      );
 
       if (newCustomer.salesStatus.isNotEmpty) await setStatus(customerKey, newCustomer.salesStatus);
       if (newCustomer.memo.isNotEmpty) await setMemo(customerKey, newCustomer.memo);

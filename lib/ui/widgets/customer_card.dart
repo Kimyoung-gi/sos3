@@ -130,7 +130,7 @@ class CustomerCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 10),
-                // 최근 메모 1줄 (연한 grey 박스, radius 10, 13px, ellipsis)
+                // 최근 메모 (최대 2줄, 연한 grey 박스, radius 10, 13px, ellipsis)
                 if (customer.memo.isNotEmpty)
                   Container(
                     width: double.infinity,
@@ -145,7 +145,7 @@ class CustomerCard extends StatelessWidget {
                         fontSize: 13,
                         color: AppColors.textSecondary,
                       ),
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),

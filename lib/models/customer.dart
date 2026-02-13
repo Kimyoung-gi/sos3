@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 /// 고객(개통) 모델 — Repository/Admin CSV 업로드용
 /// 기존 CustomerData와 필드 매핑: customerName, openedAt→openDate, productName, productType, hq, branch, seller→sellerName, building, salesStatus
 class Customer {
@@ -13,6 +15,8 @@ class Customer {
   final String memo;
   final bool isFavorite;
   final String personInCharge;
+  /// Firestore 저장 시 등록/수정 시간 (최근 등록 정렬용)
+  final DateTime? createdAt;
 
   const Customer({
     required this.customerName,
@@ -27,6 +31,7 @@ class Customer {
     this.memo = '',
     this.isFavorite = false,
     this.personInCharge = '',
+    this.createdAt,
   });
 
   String get customerKey => '$customerName|$openDate|$productName';
@@ -46,6 +51,13 @@ class Customer {
         'personInCharge': personInCharge,
       };
 
+  static DateTime? _parseCreatedAt(dynamic v) {
+    if (v == null) return null;
+    if (v is Timestamp) return v.toDate();
+    if (v is String) return DateTime.tryParse(v);
+    return null;
+  }
+
   factory Customer.fromJson(Map<String, dynamic> j) => Customer(
         customerName: j['customerName'] as String? ?? '',
         openDate: j['openDate'] as String? ?? '',
@@ -59,6 +71,7 @@ class Customer {
         memo: j['memo'] as String? ?? '',
         isFavorite: j['isFavorite'] as bool? ?? false,
         personInCharge: j['personInCharge'] as String? ?? '',
+        createdAt: _parseCreatedAt(j['createdAt']),
       );
 
   Customer copyWith({
@@ -74,6 +87,7 @@ class Customer {
     String? memo,
     bool? isFavorite,
     String? personInCharge,
+    DateTime? createdAt,
   }) =>
       Customer(
         customerName: customerName ?? this.customerName,
@@ -88,5 +102,6 @@ class Customer {
         memo: memo ?? this.memo,
         isFavorite: isFavorite ?? this.isFavorite,
         personInCharge: personInCharge ?? this.personInCharge,
+        createdAt: createdAt ?? this.createdAt,
       );
 }
