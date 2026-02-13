@@ -2359,7 +2359,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
 
       // 영업상태·메모·영업활동 — Firestore에 저장 (PC/모바일 동기화)
       await repo.setStatus(key, _salesStatusDraft);
-      final memoToSync = _activitiesDraft.isNotEmpty ? _activitiesDraft.first.text : widget.customer.memo;
+      final memoToSync = _activitiesDraft.isNotEmpty ? _activitiesDraft.first.text : '';
       await repo.setMemo(key, memoToSync);
       final activitiesToSync = _activitiesDraft.map((a) => a.toJson()).toList();
       await repo.setSalesActivities(key, activitiesToSync);
