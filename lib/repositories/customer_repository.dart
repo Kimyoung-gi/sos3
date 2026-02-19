@@ -187,11 +187,13 @@ class CustomerRepository {
     debugPrint('🗑️ CustomerRepository: Firestore 고객 데이터 삭제 완료');
   }
 
-  /// CSV 파싱 결과로 완전 교체 (Firestore에 저장, status/memo/favorites 유지)
+  /// CSV 파싱 결과로 완전 교체 (Firestore에 저장, status/memo/favorites/수기등록 유지)
   Future<MergeResult> replaceFromCsv(List<Customer> parsed) async {
     final existingBefore = await _loadAll();
     final beforeCount = existingBefore.length;
     debugPrint('📊 [REPLACE] 로딩 전 기존 고객 수: $beforeCount건');
+
+    final directKeysBefore = await getRegisteredCustomerKeys();
 
     final statusMap = <String, String>{};
     final memoMap = <String, String>{};
@@ -216,7 +218,10 @@ class CustomerRepository {
     }).toList();
 
     await _saveAll(replaced);
-    debugPrint('✅ [REPLACE] Firestore 고객 수: ${replaced.length}건');
+    for (final key in directKeysBefore) {
+      if (replaced.any((c) => c.customerKey == key)) await setSource(key, 'direct');
+    }
+    debugPrint('✅ [REPLACE] Firestore 고객 수: ${replaced.length}건, 수기등록 유지: ${directKeysBefore.length}건');
 
     return MergeResult(
       total: parsed.length,
@@ -297,12 +302,19 @@ class CustomerRepository {
     await _customersRef.doc(docId).set({'source': 'direct'}, SetOptions(merge: true));
   }
 
+  /// 고객 문서의 source 필드만 갱신 (merge) — CSV 머지/교체 후 수기 등록 보존용
+  Future<void> setSource(String customerKey, String source) async {
+    final docId = _docId(customerKey);
+    await _customersRef.doc(docId).set({'source': source}, SetOptions(merge: true));
+  }
+
   static String _dupKey(Customer c) =>
       '${c.customerName}|${c.openDate}|${c.productName}|${c.sellerName}';
 
   Future<MergeResult> mergeFromCsv(List<Customer> parsed, {required bool updateOnDuplicate}) async {
     final existing = await _loadAll();
     final favList = await getFavorites();
+    final directKeysBefore = await getRegisteredCustomerKeys();
 
     int success = 0, skipped = 0, updated = 0;
     final failReasons = <String, int>{};
@@ -332,6 +344,9 @@ class CustomerRepository {
     }
 
     await _saveAll(merged.values.toList());
+    for (final key in directKeysBefore) {
+      if (merged.values.any((c) => c.customerKey == key)) await setSource(key, 'direct');
+    }
     return MergeResult(
       total: parsed.length,
       success: success,
@@ -372,10 +387,12 @@ class CustomerRepository {
       }
 
       final docId = _docId(customerKey);
-      await _customersRef.doc(docId).set(
-        _toFirestoreData(customerToSave, source: 'direct', setCreatedAt: !isDuplicate),
-        isDuplicate ? SetOptions(merge: true) : SetOptions(),
-      );
+      final data = _toFirestoreData(customerToSave, source: 'direct', setCreatedAt: !isDuplicate);
+      if (isDuplicate) {
+        await _customersRef.doc(docId).set(data, SetOptions(merge: true));
+      } else {
+        await _customersRef.doc(docId).set(data);
+      }
 
       if (newCustomer.salesStatus.isNotEmpty) await setStatus(customerKey, newCustomer.salesStatus);
       if (newCustomer.memo.isNotEmpty) await setMemo(customerKey, newCustomer.memo);

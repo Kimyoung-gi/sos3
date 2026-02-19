@@ -432,6 +432,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             navigatorKey: _moreNavigatorKey,
             pendingRoute: widget.pendingMoreRoute,
             onClearPendingRoute: widget.onClearPendingRoute,
+            onGlobalRefresh: _loadFavorites,
           ), // 더보기
         ],
       ),
@@ -9400,7 +9401,9 @@ class _RecentRegisteredScreenState extends State<RecentRegisteredScreen> {
         final tb = b.createdAt ?? _openDateToDateTime(b.openDate);
         return tb.compareTo(ta);
       });
-      final dataList = CustomerConverter.toCustomerDataList(directOnly);
+      // 전체보기에서는 최대 20개만 표시
+      final limited = directOnly.take(20).toList();
+      final dataList = CustomerConverter.toCustomerDataList(limited);
       if (mounted) setState(() {
         _customers = dataList;
         _isLoading = false;
@@ -9483,12 +9486,15 @@ class MoreScreen extends StatefulWidget {
   final GlobalKey<NavigatorState>? navigatorKey;
   final String? pendingRoute;
   final VoidCallback? onClearPendingRoute;
+  /// 홈/고객사 등 전역 데이터 갱신 (즐겨찾기 등)
+  final Future<void> Function()? onGlobalRefresh;
 
   const MoreScreen({
     super.key,
     this.navigatorKey,
     this.pendingRoute,
     this.onClearPendingRoute,
+    this.onGlobalRefresh,
   });
 
   @override
@@ -9497,11 +9503,35 @@ class MoreScreen extends StatefulWidget {
 
 class _MoreScreenState extends State<MoreScreen> {
   Set<String> _favoriteCustomerKeys = {};
+  bool _isRefreshing = false;
 
   @override
   void initState() {
     super.initState();
     _loadFavorites();
+  }
+
+  Future<void> _onRefresh() async {
+    if (_isRefreshing) return;
+    setState(() => _isRefreshing = true);
+    try {
+      await widget.onGlobalRefresh?.call();
+      await _loadFavorites();
+      CsvReloadBus().reload('customerlist.csv');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('데이터를 새로고침했습니다.'), backgroundColor: Color(0xFF4CAF50)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('새로고침 실패: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isRefreshing = false);
+    }
   }
 
   @override
@@ -9564,6 +9594,8 @@ class _MoreScreenState extends State<MoreScreen> {
               toggleFavorite: toggleFavorite,
               isFavorite: isFavorite,
               onLoadFavorites: _loadFavorites,
+              onRefresh: _onRefresh,
+              isRefreshing: _isRefreshing,
             ),
           );
         }
@@ -9597,12 +9629,16 @@ class _MoreMenuContent extends StatelessWidget {
   final Future<void> Function(String) toggleFavorite;
   final bool Function(String) isFavorite;
   final Future<void> Function() onLoadFavorites;
+  final Future<void> Function() onRefresh;
+  final bool isRefreshing;
 
   const _MoreMenuContent({
     required this.favoriteKeys,
     required this.toggleFavorite,
     required this.isFavorite,
     required this.onLoadFavorites,
+    required this.onRefresh,
+    this.isRefreshing = false,
   });
 
   @override
@@ -9717,6 +9753,19 @@ class _MoreMenuContent extends StatelessWidget {
                 child: Column(
                   children: [
                     _MoreCardButton(
+                      title: '새로고침',
+                      icon: Icons.refresh,
+                      onTap: () { if (!isRefreshing) onRefresh(); },
+                      trailing: isRefreshing
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(height: 16),
+                    _MoreCardButton(
                       title: '즐겨찾기',
                       icon: Icons.star,
                       onTap: () {
@@ -9826,11 +9875,13 @@ class _MoreCardButton extends StatelessWidget {
   final String title;
   final IconData icon;
   final VoidCallback onTap;
+  final Widget? trailing;
 
   const _MoreCardButton({
     required this.title,
     required this.icon,
     required this.onTap,
+    this.trailing,
   });
 
   @override
@@ -9880,7 +9931,7 @@ class _MoreCardButton extends StatelessWidget {
                     ),
                   ),
                 ),
-                Icon(
+                trailing ?? Icon(
                   Icons.chevron_right,
                   color: Colors.grey[400],
                   size: 20,
