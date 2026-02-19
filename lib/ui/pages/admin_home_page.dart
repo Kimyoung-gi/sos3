@@ -20,6 +20,7 @@ import '../../repositories/upload_history_repository.dart';
 import '../../utils/csv_parser_extended.dart';
 import '../../utils/csv_template_generator.dart';
 import '../../utils/csv_downloader.dart';
+import '../../services/csv_service.dart';
 import 'admin_csv_upload_page.dart';
 
 /// 관리자 홈 페이지: 사이드바 + 2개 탭 (사용자 관리, CSV 업로드)
@@ -137,6 +138,17 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
   }
 }
 
+/// 업로드 가능한 CSV 파일 목록 (엑셀 다운로드용)
+const List<String> _uploadableCsvFiles = [
+  'customerlist.csv',
+  'kpi-info.csv',
+  'kpi_it.csv',
+  'kpi_itr.csv',
+  'kpi_mobile.csv',
+  'kpi_etc.csv',
+  'OD.CSV',
+];
+
 /// 엑셀 다운로드 탭 - 고객사 정보 CSV 다운로드 (마지막 컬럼: CSV파일업로드/직접 고객사등록 여부)
 class _ExcelDownloadTab extends StatefulWidget {
   const _ExcelDownloadTab();
@@ -147,6 +159,7 @@ class _ExcelDownloadTab extends StatefulWidget {
 
 class _ExcelDownloadTabState extends State<_ExcelDownloadTab> {
   bool _isLoading = false;
+  final Set<String> _downloadingFiles = {};
 
   static String _escapeCsv(String value) {
     final s = value.replaceAll('"', '""');
@@ -229,6 +242,60 @@ class _ExcelDownloadTabState extends State<_ExcelDownloadTab> {
     }
   }
 
+  static String _fileLabel(String filename) {
+    const labels = {
+      'customerlist.csv': '고객사 목록',
+      'kpi-info.csv': 'KPI 정보',
+      'kpi_it.csv': 'KPI IT(신규)',
+      'kpi_itr.csv': 'KPI IT(갱신)',
+      'kpi_mobile.csv': 'KPI 모바일',
+      'kpi_etc.csv': 'KPI 기타',
+      'OD.CSV': 'OD',
+    };
+    return labels[filename] ?? filename;
+  }
+
+  Future<void> _downloadUploadedCsv(String filename) async {
+    if (_downloadingFiles.contains(filename)) return;
+    setState(() => _downloadingFiles.add(filename));
+    try {
+      final content = await CsvService.load(filename);
+      if (content.isEmpty) throw Exception('파일 내용이 비어 있습니다.');
+      if (kIsWeb) {
+        CsvDownloader.download(content, filename);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('다운로드되었습니다. ($filename)'),
+              backgroundColor: AppColors.statusComplete,
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('엑셀(CSV) 다운로드는 웹 환경에서만 가능합니다.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('CSV 다운로드 오류 ($filename): $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('다운로드 실패: ${filename} — $e'),
+            backgroundColor: AppColors.customerRed,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _downloadingFiles.remove(filename));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
@@ -242,7 +309,7 @@ class _ExcelDownloadTabState extends State<_ExcelDownloadTab> {
           ),
           const SizedBox(height: 8),
           Text(
-            '고객사 정보를 CSV 파일로 다운로드합니다. Excel에서 열 수 있으며, 마지막 컬럼에 CSV 파일 업로드/직접 고객사 등록 여부가 포함됩니다.',
+            '고객사 데이터(정리본) 및 업로드한 CSV 자료를 다운로드합니다. Excel에서 열 수 있습니다.',
             style: TextStyle(color: Colors.grey[600], fontSize: 14),
           ),
           const SizedBox(height: 32),
@@ -289,6 +356,74 @@ class _ExcelDownloadTabState extends State<_ExcelDownloadTab> {
                     '다운로드 파일에는 고객명, 개통일자, 상품유형, 상품명, 본부, 지사, 실판매자, 건물명, 영업상태, 메모, 담당자, 등록구분(CSV 파일 업로드 / 직접 고객사 등록)이 포함됩니다.',
                     style: TextStyle(fontSize: 13, color: Colors.grey[600]),
                   ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            '업로드한 자료 다운로드',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Firestore에 업로드된 CSV 파일을 그대로 다운로드합니다. (없으면 앱 기본 자료가 다운로드됩니다.)',
+            style: TextStyle(color: Colors.grey[600], fontSize: 13),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppDimens.cardRadius),
+              side: BorderSide(color: AppColors.border),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  for (final filename in _uploadableCsvFiles) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        children: [
+                          Icon(Icons.description, size: 20, color: Colors.grey[600]),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              _fileLabel(filename),
+                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 120,
+                            child: FilledButton.icon(
+                              onPressed: _downloadingFiles.contains(filename)
+                                  ? null
+                                  : () => _downloadUploadedCsv(filename),
+                              icon: _downloadingFiles.contains(filename)
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.download, size: 18),
+                              label: Text(
+                                _downloadingFiles.contains(filename) ? '다운로드 중' : '다운로드',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: AppColors.customerRed,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (filename != _uploadableCsvFiles.last)
+                      Divider(height: 1, color: Colors.grey[200]),
+                  ],
                 ],
               ),
             ),

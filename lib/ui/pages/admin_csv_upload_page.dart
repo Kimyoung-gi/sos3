@@ -13,6 +13,8 @@ import '../../services/csv_service.dart';
 import '../../services/csv_reload_bus.dart';
 import '../../utils/csv_template_generator.dart';
 import '../../utils/csv_downloader.dart';
+import '../../utils/csv_parser_extended.dart';
+import '../../repositories/customer_repository.dart';
 
 /// CSV 파일 목록 (고정) — 2행×4열 그리드용 (8칸, 7개 파일)
 const List<String> _csvFiles = [
@@ -390,6 +392,21 @@ class _CsvUploadCardState extends State<_CsvUploadCard> {
       }, SetOptions(merge: true));
       
       debugPrint('✅ Firestore 저장 완료: csv_files/${widget.filename}');
+
+      // 고객사 목록 업로드 시 DB(customers)에 즉시 반영 — 고객사 데이터 건수와 목록 건수 일치
+      if (widget.filename == 'customerlist.csv' && csvContent.trim().isNotEmpty) {
+        try {
+          final rows = CsvParserExtended.parseCustomerBase(csvContent);
+          final validCustomers = rows.where((r) => r.data != null).map((r) => r.data!).toList();
+          if (validCustomers.isNotEmpty) {
+            final repo = context.read<CustomerRepository>();
+            final mr = await repo.mergeFromCsv(validCustomers, updateOnDuplicate: true);
+            debugPrint('✅ 고객사 DB 머지 완료: 총 ${mr.total}행 → 반영 ${mr.success + mr.updated}건');
+          }
+        } catch (e) {
+          debugPrint('⚠️ 고객사 DB 머지 실패 (파일 저장은 완료): $e');
+        }
+      }
 
       // Firestore에 업로드 이력 기록
       try {
