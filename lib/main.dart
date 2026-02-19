@@ -2238,6 +2238,18 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
     _salesStatusDraft = widget.customer.salesStatus;
     _activitiesDraft = [];
     _loadActivities();
+    // 상세 화면이 다른 네비게이터에서 열린 경우(더보기 등) Firestore에서 즐겨찾기 상태 로드
+    if (mainState == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadFavoriteFromRepo());
+    }
+  }
+
+  Future<void> _loadFavoriteFromRepo() async {
+    if (!mounted) return;
+    try {
+      final keys = await context.read<CustomerRepository>().getFavorites();
+      if (mounted) setState(() => _isFavorite = keys.contains(widget.customer.customerKey));
+    } catch (_) {}
   }
 
   @override
@@ -2388,7 +2400,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
     }
   }
 
-  // [FAV] 즐겨찾기 토글 로직
+  // [FAV] 즐겨찾기 토글 — MainNavigationScreenState 또는 Firestore와 연동
   void _toggleFavorite() async {
     final mainState = context.findAncestorStateOfType<_MainNavigationScreenState>();
     if (mainState != null) {
@@ -2397,6 +2409,25 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
         _isFavorite = mainState.isFavorite(widget.customer.customerKey);
       });
       widget.onFavoriteChanged();
+      return;
+    }
+    // 더보기 등 다른 경로에서 열린 경우 Firestore에 직접 저장
+    try {
+      final repo = context.read<CustomerRepository>();
+      final keys = await repo.getFavorites();
+      final key = widget.customer.customerKey;
+      if (keys.contains(key)) {
+        keys.remove(key);
+      } else {
+        keys.add(key);
+      }
+      await repo.setFavorites(keys);
+      if (mounted) {
+        setState(() => _isFavorite = keys.contains(key));
+        widget.onFavoriteChanged();
+      }
+    } catch (e) {
+      debugPrint('즐겨찾기 토글 오류: $e');
     }
   }
 
@@ -9360,13 +9391,16 @@ class _RecentRegisteredScreenState extends State<RecentRegisteredScreen> {
       final customerRepo = context.read<CustomerRepository>();
       final user = authService.currentUser;
       final list = await customerRepo.getFiltered(user);
+      // 수기 등록(source=='direct')만 표시
+      final registeredKeys = await customerRepo.getRegisteredCustomerKeys();
+      final directOnly = list.where((c) => registeredKeys.contains(c.customerKey)).toList();
       // 최근 등록(createdAt) 우선, 없으면 개통일(openDate) 기준 내림차순 (최신이 위로)
-      list.sort((a, b) {
+      directOnly.sort((a, b) {
         final ta = a.createdAt ?? _openDateToDateTime(a.openDate);
         final tb = b.createdAt ?? _openDateToDateTime(b.openDate);
         return tb.compareTo(ta);
       });
-      final dataList = CustomerConverter.toCustomerDataList(list);
+      final dataList = CustomerConverter.toCustomerDataList(directOnly);
       if (mounted) setState(() {
         _customers = dataList;
         _isLoading = false;

@@ -70,8 +70,10 @@ class _HomeRecentActivityState extends State<HomeRecentActivity> {
       // 약정만료 예정: 당일 기준 -1개월 ~ +1개월 (개통일+36개월 기준), 최대 4개
       final expiringSoon = _filterExpiringSoon(customerDataList);
 
-      // 최근 등록한 고객사: createdAt 우선, 없으면 openDate 기준 내림차순 (최신이 위로), 최대 4개
-      final sortedByTime = List<Customer>.from(customers)
+      // 최근 등록한 고객사: 수기 등록(source=='direct')만, createdAt 우선 정렬, 최대 4개
+      final registeredKeys = await customerRepo.getRegisteredCustomerKeys();
+      final directOnly = customers.where((c) => registeredKeys.contains(c.customerKey)).toList();
+      final sortedByTime = List<Customer>.from(directOnly)
         ..sort((a, b) {
           final ta = a.createdAt ?? _openDateToDateTime(a.openDate) ?? DateTime(0);
           final tb = b.createdAt ?? _openDateToDateTime(b.openDate) ?? DateTime(0);

@@ -207,11 +207,11 @@ class _CustomerListPageState extends State<CustomerListPage> {
     }
   }
 
-  /// 메모+영업활동 항목 최대 2개 (메모 우선, 이후 최근 영업활동 1개 — Firestore 동기화)
+  /// 메모 미리보기 1개만 (메모 우선, 없으면 최근 영업활동 1개 — Firestore 동기화)
   List<String> _buildMemoItems(CustomerData customer) {
     final items = <String>[];
     if (customer.memo.trim().isNotEmpty) items.add(customer.memo.trim());
-    // Firestore salesActivities에서 최근 1개 사용 (PC/모바일 동기화)
+    if (items.length >= 1) return items.take(1).toList();
     final activities = customer.salesActivities;
     if (activities.isNotEmpty) {
       final sorted = List<Map<String, dynamic>>.from(activities);
@@ -221,9 +221,9 @@ class _CustomerListPageState extends State<CustomerListPage> {
         return bt.compareTo(at);
       });
       final text = (sorted.first['text'] as String? ?? '').trim();
-      if (text.isNotEmpty && items.length < 2) items.add(text);
+      if (text.isNotEmpty) items.add(text);
     }
-    return items.take(2).toList();
+    return items.take(1).toList();
   }
 
   /// 검색어 변경 핸들러 (debounce)

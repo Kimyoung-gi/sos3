@@ -10,7 +10,7 @@ class CustomerCard extends StatelessWidget {
   final bool isFavorite;
   final VoidCallback onTap;
   final VoidCallback onFavoriteToggle;
-  /// 메모/영업활동 항목 (최대 2개 표시)
+  /// 메모 미리보기 (1개만 표시)
   final List<String> memoItems;
 
   const CustomerCard({
@@ -48,7 +48,7 @@ class CustomerCard extends StatelessWidget {
   }
 
   List<Widget> _buildMemoItems() {
-    final items = memoItems.take(2).where((s) => s.trim().isNotEmpty).toList();
+    final items = memoItems.take(1).where((s) => s.trim().isNotEmpty).toList();
     if (items.isEmpty) {
       return [
         Container(
@@ -171,7 +171,7 @@ class CustomerCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 10),
-                // 메모/영업활동 (최대 2개 항목)
+                // 메모 미리보기 (1개)
                 ..._buildMemoItems(),
                 const SizedBox(height: 12),
                 Divider(height: 1, thickness: 1, color: AppColors.border),
