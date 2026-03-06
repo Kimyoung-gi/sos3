@@ -76,6 +76,7 @@ flutter:
   assets:
     - assets/images/sos_logo.png
     - assets/images/home_banner.png
+    - assets/images/PCwide.png
     - assets/고객사list.csv
     - assets/kpi_etc.csv
     - assets/kpi_mobile.csv

@@ -7,6 +7,8 @@ class User {
   final UserRole role;
   final UserScope scope;
   final bool isActive;
+  /// 전화번호 (관리자 사용자 관리용)
+  final String phone;
   /// SELF 조회 시 사용. 실판매자(예: 1228150/최성은)와 매칭
   final String? sellerName;
 
@@ -18,6 +20,7 @@ class User {
     required this.role,
     required this.scope,
     this.isActive = true,
+    this.phone = '',
     this.sellerName,
   });
 
@@ -57,6 +60,7 @@ class User {
         'role': role.name,
         'scope': scope.name,
         'isActive': isActive,
+        'phone': phone,
         'sellerName': sellerName,
       };
 
@@ -68,6 +72,7 @@ class User {
         role: _roleFrom(j['role']),
         scope: _scopeFrom(j['scope']),
         isActive: j['isActive'] as bool? ?? true,
+        phone: j['phone'] as String? ?? '',
         sellerName: j['sellerName'] as String?,
       );
 
@@ -96,6 +101,7 @@ class User {
     UserRole? role,
     UserScope? scope,
     bool? isActive,
+    String? phone,
     String? sellerName,
   }) =>
       User(
@@ -106,6 +112,7 @@ class User {
         role: role ?? this.role,
         scope: scope ?? this.scope,
         isActive: isActive ?? this.isActive,
+        phone: phone ?? this.phone,
         sellerName: sellerName ?? this.sellerName,
       );
 }

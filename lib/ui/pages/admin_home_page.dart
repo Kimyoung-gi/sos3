@@ -1095,7 +1095,8 @@ class _UserManagementTabState extends State<_UserManagementTab> {
       return u.id.toLowerCase().contains(q) ||
           u.name.toLowerCase().contains(q) ||
           u.hq.toLowerCase().contains(q) ||
-          u.branch.toLowerCase().contains(q);
+          u.branch.toLowerCase().contains(q) ||
+          u.phone.toLowerCase().contains(q);
     }).toList();
   }
 
@@ -1206,7 +1207,7 @@ class _UserManagementTabState extends State<_UserManagementTab> {
                   TextField(
                     style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
                     decoration: InputDecoration(
-                      hintText: '검색 (아이디/이름/본부)',
+                      hintText: '검색 (아이디/이름/본부/전화번호)',
                       hintStyle: TextStyle(color: AppColors.textSecondary),
                       prefixIcon: Icon(Icons.search, size: 20, color: AppColors.textSecondary),
                       filled: true,
@@ -1259,6 +1260,7 @@ class _UserManagementTabState extends State<_UserManagementTab> {
                             DataColumn(label: Text('아이디')),
                             DataColumn(label: Text('이름')),
                             DataColumn(label: Text('본부')),
+                            DataColumn(label: Text('전화번호')),
                             DataColumn(label: Text('권한')),
                             DataColumn(label: Text('작업')),
                           ],
@@ -1269,6 +1271,7 @@ class _UserManagementTabState extends State<_UserManagementTab> {
                                 DataCell(Text(u.id)),
                                 DataCell(Text(u.name)),
                                 DataCell(Text(u.hq.isEmpty ? '-' : u.hq)),
+                                DataCell(Text(u.phone.isEmpty ? '-' : u.phone)),
                                 DataCell(Text(_roleToLabel(u.role))),
                                 DataCell(
                                   Row(
@@ -1319,6 +1322,7 @@ class _UserEditDialogState extends State<_UserEditDialog> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _idController;
   late TextEditingController _nameController;
+  late TextEditingController _phoneController;
   late TextEditingController _passwordController;
   late TextEditingController _passwordConfirmController;
   
@@ -1365,6 +1369,7 @@ class _UserEditDialogState extends State<_UserEditDialog> {
     _isEdit = widget.user != null;
     _idController = TextEditingController(text: widget.user?.id ?? '');
     _nameController = TextEditingController(text: widget.user?.name ?? '');
+    _phoneController = TextEditingController(text: widget.user?.phone ?? '');
     _passwordController = TextEditingController();
     _passwordConfirmController = TextEditingController();
     
@@ -1381,6 +1386,7 @@ class _UserEditDialogState extends State<_UserEditDialog> {
   void dispose() {
     _idController.dispose();
     _nameController.dispose();
+    _phoneController.dispose();
     _passwordController.dispose();
     _passwordConfirmController.dispose();
     super.dispose();
@@ -1462,6 +1468,7 @@ class _UserEditDialogState extends State<_UserEditDialog> {
         role: role,
         scope: scope,
         isActive: true,
+        phone: _phoneController.text.trim(),
         sellerName: null,
       );
       
@@ -1633,6 +1640,14 @@ class _UserEditDialogState extends State<_UserEditDialog> {
           style: TextStyle(color: AppColors.textPrimary),
           decoration: _dialogInputDecoration('이름 *'),
           validator: (v) => v?.trim().isEmpty ?? true ? '이름을 입력하세요' : null,
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 16),
+        TextFormField(
+          controller: _phoneController,
+          style: TextStyle(color: AppColors.textPrimary),
+          decoration: _dialogInputDecoration('전화번호'),
+          keyboardType: TextInputType.phone,
           onChanged: (_) => setState(() {}),
         ),
         const SizedBox(height: 16),

@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 
 import 'no_glow_scroll_behavior.dart';
 
-/// PC 웹에서 모바일 프레임(394×811) 안에서만 렌더링되도록 강제하는 쉘.
+/// PC(1024px 이상)에서만 중앙 모바일형 컨테이너 + 배경을 적용하는 쉘.
 ///
-/// - **모바일(width <= 430)**: 프레임 미적용(전체 화면)
-/// - **PC(width > 430)**: 중앙 고정 프레임(394×811) + 내부만 스크롤
+/// - **모바일(width < 1024)**: 전체 화면 그대로 사용
+/// - **PC(width >= 1024)**: 배경 + 중앙 고정폭 컨테이너(430×100vh, 흰색, 둥근 모서리, 그림자)
 class FrameShell extends StatefulWidget {
   final Widget child;
 
@@ -21,6 +21,10 @@ class FrameShell extends StatefulWidget {
 class _FrameShellState extends State<FrameShell> {
   final ScrollController _primaryScrollController = ScrollController();
 
+  static const double _pcBreakpoint = 1024;
+  static const double _containerWidth = 430;
+  static const double _containerRadius = 24;
+
   @override
   void dispose() {
     _primaryScrollController.dispose();
@@ -30,44 +34,53 @@ class _FrameShellState extends State<FrameShell> {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    final isMobile = width <= 430;
+    final height = MediaQuery.of(context).size.height;
+    final isPc = width >= _pcBreakpoint;
 
-    if (isMobile) {
+    if (!isPc) {
       return ScrollConfiguration(
         behavior: const NoGlowScrollBehavior(),
         child: widget.child,
       );
     }
 
-    return ColoredBox(
-      color: const Color(0xFFF6F7F9),
+    // PC: 배경 이미지(assets/images/PCwide.png) + 중앙 모바일 컨테이너
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      decoration: BoxDecoration(
+        image: DecorationImage(
+          image: AssetImage('assets/images/PCwide.png'),
+          fit: BoxFit.cover,
+        ),
+      ),
       child: Center(
         child: Container(
-          width: 394,
-          height: 811,
+          width: _containerWidth,
+          height: height,
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(
-              color: const Color(0xFFE6E8EC),
-              width: 1,
-            ),
+            borderRadius: BorderRadius.circular(_containerRadius),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.10),
-                blurRadius: 28,
-                offset: const Offset(0, 10),
+                color: Colors.black.withOpacity(0.12),
+                blurRadius: 32,
+                offset: const Offset(0, 12),
+              ),
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
               ),
             ],
           ),
+          clipBehavior: Clip.antiAlias,
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(28),
+            borderRadius: BorderRadius.circular(_containerRadius),
             child: PrimaryScrollController(
               controller: _primaryScrollController,
               child: ScrollConfiguration(
                 behavior: const NoGlowScrollBehavior(),
-                // 스크롤바는 화면/플랫폼별 기본 동작에 맡김(선택 사항).
-                // RawScrollbar를 강제하면 스크롤러가 없는 화면에서 assertion이 날 수 있어 제외.
                 child: widget.child,
               ),
             ),
