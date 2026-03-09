@@ -262,10 +262,12 @@ GoRouter createRouter(AuthService authService) {
               final extra = state.extra as String?;
               if (extra != null && extra.isNotEmpty) intent.goToMore(extra);
               final pending = intent.pendingRoute;
+              final salesStatus = state.uri.queryParameters['salesStatus'];
               return MainNavigationScreen(
                 initialTab: pending != null ? 5 : (int.tryParse(tab) ?? 0),
                 pendingMoreRoute: pending,
                 onClearPendingRoute: intent.clear,
+                customerListInitialSalesStatus: salesStatus,
               );
             },
           ),
@@ -321,12 +323,15 @@ class MainNavigationScreen extends StatefulWidget {
   /// [HOME] 홈 전체보기에서 더보기 탭으로 진입 시 열 서브 메뉴 (favorites / recent / contract_expiring)
   final String? pendingMoreRoute;
   final VoidCallback? onClearPendingRoute;
+  /// 고객사 탭 진입 시 초기 영업상태 필터 (예: 영업중)
+  final String? customerListInitialSalesStatus;
 
   const MainNavigationScreen({
     super.key,
     this.initialTab = 0,
     this.pendingMoreRoute,
     this.onClearPendingRoute,
+    this.customerListInitialSalesStatus,
   });
 
   @override
@@ -424,7 +429,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         index: _currentIndex,
         children: [
           const HomePage(), // 홈
-          CustomerListPage(), // 고객사
+          CustomerListPage(initialSalesStatusFilter: widget.customerListInitialSalesStatus), // 고객사
           FrontierHqSelectionScreen(), // 프론티어
           DashboardScreen(), // 대시보드
           const OdListPage(), // OD
@@ -7264,7 +7269,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
         backgroundColor: Colors.white,
         elevation: 1,
         automaticallyImplyLeading: false,
-        leading: const PageMenuTitle(icon: Icons.dashboard_rounded, label: '대시보드'),
+        leading: const PageMenuTitle(icon: Icons.bar_chart_rounded, label: '조직별 실적'),
         leadingWidth: 140,
         centerTitle: true,
         title: Image.asset(

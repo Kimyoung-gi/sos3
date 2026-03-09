@@ -16,7 +16,10 @@ import '../widgets/customer_card.dart';
 
 /// 고객사 리스트 페이지 (전면 개편)
 class CustomerListPage extends StatefulWidget {
-  const CustomerListPage({super.key});
+  /// 대시보드 등에서 고객사 탭 진입 시 영업상태 필터 (예: '영업중')
+  final String? initialSalesStatusFilter;
+
+  const CustomerListPage({super.key, this.initialSalesStatusFilter});
 
   @override
   State<CustomerListPage> createState() => _CustomerListPageState();
@@ -54,6 +57,13 @@ class _CustomerListPageState extends State<CustomerListPage> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialSalesStatusFilter != null) {
+      final idx = _salesStatusList.indexOf(widget.initialSalesStatusFilter!);
+      if (idx >= 0) {
+        _selectedTabIndex = 1; // 영업상태 탭
+        _selectedSalesStatusIndex = idx;
+      }
+    }
     _loadFavorites();
     _loadCustomers();
     _searchController.addListener(_onSearchChanged);

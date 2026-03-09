@@ -6,7 +6,7 @@ import 'widgets/home_greeting_card.dart';
 import 'widgets/home_quick_actions.dart';
 import 'widgets/home_recent_activity.dart';
 
-/// 홈 페이지 - 인사 카드, 빠른실행, 즐겨찾기/최근 등록 고객사 (SOS 2.0 톤앤매너)
+/// 홈 페이지 - 인사 카드, 대시보드, 즐겨찾기/최근 등록 고객사 (SOS 2.0 톤앤매너)
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
 
@@ -44,7 +44,7 @@ class HomePage extends StatelessWidget {
               child: const HomeGreetingCard(),
             ),
           ),
-          // 빠른 실행
+          // 대시보드
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(

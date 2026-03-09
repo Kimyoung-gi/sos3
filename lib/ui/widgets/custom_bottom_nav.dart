@@ -52,8 +52,8 @@ class CustomBottomNav extends StatelessWidget {
             onTap: () => onTap(2),
           ),
           _NavItem(
-            icon: Icons.dashboard_rounded,
-            label: '대시보드',
+            icon: Icons.bar_chart_rounded,
+            label: '조직별 실적',
             isActive: currentIndex == 3,
             onTap: () => onTap(3),
           ),
