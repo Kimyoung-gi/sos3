@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 /// CSV 로딩 서비스 (Firestore 우선, assets fallback)
 class CsvService {
@@ -62,11 +64,23 @@ class CsvService {
       if (doc.exists && doc.data() != null) {
         final data = doc.data()!;
         csvText = data['content'] as String?;
-        
+        if (csvText == null || csvText.isEmpty) {
+          final storagePath = data['storagePath'] as String?;
+          if (storagePath != null && storagePath.isNotEmpty) {
+            debugPrint('📥 Storage에서 CSV 로드: $storagePath');
+            final ref = FirebaseStorage.instance.ref(storagePath);
+            final bytes = await ref.getData();
+            if (bytes != null && bytes.isNotEmpty) {
+              csvText = utf8.decode(bytes);
+              if (csvText.trim().isEmpty) csvText = null;
+              if (csvText != null) debugPrint('✅ Storage에서 로드 성공: $filename (${csvText.length} chars)');
+            }
+          }
+        }
         if (csvText != null && csvText.isNotEmpty) {
-          debugPrint('✅ Firestore에서 로드 성공: $filename (${csvText.length} bytes)');
-        } else {
-          debugPrint('⚠️ Firestore: content 필드가 null이거나 비어있음');
+          if (data['content'] != null) debugPrint('✅ Firestore에서 로드 성공: $filename (${csvText.length} bytes)');
+        } else if (csvText == null || csvText.isEmpty) {
+          debugPrint('⚠️ Firestore: content/storagePath 없거나 비어있음');
         }
       } else {
         debugPrint('⚠️ Firestore: 문서가 존재하지 않음 (csv_files/$filename)');

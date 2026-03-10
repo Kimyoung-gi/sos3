@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_dimens.dart';
 import '../../models/user.dart';
@@ -380,18 +381,37 @@ class _CsvUploadCardState extends State<_CsvUploadCard> {
       if (!mounted) return;
       setState(() => _uploadProgress = 50.0);
       
-      debugPrint('📤 Firestore에 저장 중: csv_files/${widget.filename}');
-      
-      // Firestore에 CSV 내용 저장
       final firestore = FirebaseFirestore.instance;
-      await firestore.collection('csv_files').doc(widget.filename).set({
-        'content': csvContent,
-        'updatedAt': FieldValue.serverTimestamp(),
-        'updatedBy': currentUser.id,
-        'size': _selectedFileBytes!.length,
-      }, SetOptions(merge: true));
-      
-      debugPrint('✅ Firestore 저장 완료: csv_files/${widget.filename}');
+      // Firestore 문서/필드당 1MB 제한 — 초과 시 Storage에 저장하고 Firestore엔 경로만
+      const int maxContentBytes = 900 * 1024; // 900KB 여유
+      final contentBytes = _selectedFileBytes!.length;
+
+      if (contentBytes > maxContentBytes) {
+        debugPrint('📤 파일이 1MB 제한 초과 → Firebase Storage에 저장: csv_files/${widget.filename}');
+        final storagePath = 'csv_files/${widget.filename}';
+        final ref = FirebaseStorage.instance.ref(storagePath);
+        await ref.putData(
+          _selectedFileBytes!,
+          SettableMetadata(contentType: 'text/csv'),
+        );
+        await firestore.collection('csv_files').doc(widget.filename).set({
+          'storagePath': storagePath,
+          'content': FieldValue.delete(),
+          'updatedAt': FieldValue.serverTimestamp(),
+          'updatedBy': currentUser.id,
+          'size': contentBytes,
+        }, SetOptions(merge: true));
+        debugPrint('✅ Storage 저장 + Firestore 메타데이터 기록 완료');
+      } else {
+        debugPrint('📤 Firestore에 CSV 내용 저장: csv_files/${widget.filename}');
+        await firestore.collection('csv_files').doc(widget.filename).set({
+          'content': csvContent,
+          'updatedAt': FieldValue.serverTimestamp(),
+          'updatedBy': currentUser.id,
+          'size': contentBytes,
+        }, SetOptions(merge: true));
+        debugPrint('✅ Firestore 저장 완료: csv_files/${widget.filename}');
+      }
 
       // 고객사 목록 업로드 시 DB(customers)에 즉시 반영 — 고객사 데이터 건수와 목록 건수 일치
       if (widget.filename == 'customerlist.csv' && csvContent.trim().isNotEmpty) {
