@@ -413,18 +413,18 @@ class _CsvUploadCardState extends State<_CsvUploadCard> {
         debugPrint('✅ Firestore 저장 완료: csv_files/${widget.filename}');
       }
 
-      // 고객사 목록 업로드 시 DB(customers)에 즉시 반영 — 고객사 데이터 건수와 목록 건수 일치
+      // 고객사 목록 업로드 시 DB(customers)를 업로드 파일 기준으로 전부 덮어쓰기 (기존 영업상태/메모/즐겨찾기/수기등록은 유지)
       if (widget.filename == 'customerlist.csv' && csvContent.trim().isNotEmpty) {
         try {
           final rows = CsvParserExtended.parseCustomerBase(csvContent);
           final validCustomers = rows.where((r) => r.data != null).map((r) => r.data!).toList();
           if (validCustomers.isNotEmpty) {
             final repo = context.read<CustomerRepository>();
-            final mr = await repo.mergeFromCsv(validCustomers, updateOnDuplicate: true);
-            debugPrint('✅ 고객사 DB 머지 완료: 총 ${mr.total}행 → 반영 ${mr.success + mr.updated}건');
+            final mr = await repo.replaceFromCsv(validCustomers);
+            debugPrint('✅ 고객사 DB 덮어쓰기 완료: 업로드 ${mr.total}행 → 반영 ${mr.success}건');
           }
         } catch (e) {
-          debugPrint('⚠️ 고객사 DB 머지 실패 (파일 저장은 완료): $e');
+          debugPrint('⚠️ 고객사 DB 덮어쓰기 실패 (파일 저장은 완료): $e');
         }
       }
 
