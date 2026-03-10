@@ -35,9 +35,12 @@ class _HomeQuickActionsState extends State<HomeQuickActions> {
   void initState() {
     super.initState();
     _loadCounts();
-    _reloadSub = CsvReloadBus().stream.listen((filename) {
+    _reloadSub = CsvReloadBus().stream.listen((filename) async {
       if (filename.contains('customerlist') || filename.contains('고객사') || filename.toUpperCase().contains('OD')) {
-        _loadCounts();
+        if (filename.contains('customerlist') || filename.contains('고객사')) {
+          await context.read<CustomerRepository>().invalidateFilteredCache();
+        }
+        if (mounted) _loadCounts();
       }
     });
   }

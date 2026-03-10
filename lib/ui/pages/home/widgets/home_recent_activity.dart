@@ -32,9 +32,10 @@ class _HomeRecentActivityState extends State<HomeRecentActivity> {
   void initState() {
     super.initState();
     _load();
-    _csvReloadSubscription = CsvReloadBus().stream.listen((filename) {
+    _csvReloadSubscription = CsvReloadBus().stream.listen((filename) async {
       if (filename.contains('customerlist') || filename.contains('고객사')) {
-        _load();
+        await context.read<CustomerRepository>().invalidateFilteredCache();
+        if (mounted) _load();
       }
     });
   }

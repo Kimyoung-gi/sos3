@@ -136,16 +136,17 @@ class _CustomerListPageState extends State<CustomerListPage> {
   }
 
   /// CSV 재로드 처리 (고객사 등록 후 목록 갱신용 — 지연 없이 즉시 새로고침)
-  void _handleCsvReload(String filename) {
+  Future<void> _handleCsvReload(String filename) async {
     _reloadDebounceTimer?.cancel();
     if (_isInitialLoad) return;
+    await context.read<CustomerRepository>().invalidateFilteredCache();
     if (_isReloading || _isLoading) {
       _reloadDebounceTimer = Timer(const Duration(milliseconds: 400), () {
         if (mounted) _loadCustomers();
       });
       return;
     }
-    _loadCustomers();
+    if (mounted) _loadCustomers();
   }
 
   /// 고객사 파일인지 확인

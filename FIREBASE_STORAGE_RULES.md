@@ -86,17 +86,16 @@ Firebase Console > Storage > Rules에서 다음 규칙을 적용하세요:
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // CSV 파일 경로
-    match /csv/{filename} {
-      // 읽기: 모든 인증된 사용자 허용
+    // CSV 대용량 파일 (1MB 초과 시 업로드 경로)
+    match /csv_files/{filename} {
       allow read: if request.auth != null;
-      
-      // 쓰기: 관리자만 허용
-      allow write: if request.auth != null 
+      allow write, delete: if request.auth != null 
         && request.auth.token.role == 'admin';
-      
-      // 삭제: 관리자만 허용
-      allow delete: if request.auth != null 
+    }
+    // CSV 파일 경로 (레거시)
+    match /csv/{filename} {
+      allow read: if request.auth != null;
+      allow write, delete: if request.auth != null 
         && request.auth.token.role == 'admin';
     }
     

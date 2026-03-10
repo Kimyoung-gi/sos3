@@ -10,6 +10,13 @@ import '../models/user.dart';
 import '../services/auth_service.dart';
 import '../services/permission_service.dart';
 
+/// getFiltered 결과 캐시 항목 (TTL 적용)
+class _FilteredCacheEntry {
+  final List<Customer> data;
+  final DateTime expiresAt;
+  _FilteredCacheEntry(this.data, this.expiresAt);
+}
+
 /// 고객 저장소 (Firestore 기반 — PC/모바일 동기화). 실패 시 로컬 SharedPreferences 폴백/마이그레이션.
 class CustomerRepository {
   static const _key = 'sos_customers';
@@ -20,9 +27,33 @@ class CustomerRepository {
   static const _collectionCustomers = 'customers';
   static const _collectionUserFavorites = 'user_favorites';
 
+  /// getFiltered 캐시 TTL (같은 세션에서 재접속 시 Firestore 재요청 방지)
+  static const Duration _filteredCacheTtl = Duration(minutes: 10);
+  /// 영구 캐시 유효 기간 (로컬 저장 후 이 기간 내면 접속 시 바로 표시)
+  static const Duration _persistentCacheMaxAge = Duration(days: 7);
+  static const String _persistentCachePrefix = 'sos_filtered_cache_v1_';
+  static const int _persistentChunkMaxChars = 380000;
+
   final AuthService? _authService;
 
+  /// 사용자별 getFiltered 캐시 (userId -> 캐시 항목). 데이터 변경 시 무효화.
+  final Map<String, _FilteredCacheEntry> _filteredCache = {};
+  /// true면 영구 캐시 읽기 스킵 (무효화 직후 getFiltered가 옛 캐시를 쓰지 않도록)
+  bool _persistentCacheInvalidated = false;
+
   CustomerRepository({AuthService? authService}) : _authService = authService;
+
+  /// 고객 목록 캐시 무효화 (CSV 반영·수정 후 새로고침 시 호출). 메모리 즉시 비우고 영구 캐시는 비동기 삭제.
+  Future<void> invalidateFilteredCache() async {
+    _filteredCache.clear();
+    _persistentCacheInvalidated = true;
+    try {
+      final prefs = await _prefs();
+      final keys = prefs.getKeys().where((k) => k.startsWith(_persistentCachePrefix)).toList();
+      for (final k in keys) await prefs.remove(k);
+    } catch (_) {}
+    debugPrint('🔄 [캐시] 고객 목록 캐시 무효화 (메모리+영구)');
+  }
 
   FirebaseFirestore get _firestore => FirebaseFirestore.instance;
   CollectionReference<Map<String, dynamic>> get _customersRef =>
@@ -35,6 +66,101 @@ class CustomerRepository {
   }
 
   Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
+
+  /// 영구 캐시에서 고객 목록 로드. 만료되었거나 없으면 null.
+  Future<List<Customer>?> _loadFilteredFromPersistentCache(String cacheKey) async {
+    try {
+      final prefs = await _prefs();
+      final metaKey = '${_persistentCachePrefix}${cacheKey}_meta';
+      final metaStr = prefs.getString(metaKey);
+      if (metaStr == null || metaStr.isEmpty) return null;
+      final meta = jsonDecode(metaStr) as Map<String, dynamic>?;
+      if (meta == null) return null;
+      final savedAtStr = meta['savedAt'] as String?;
+      if (savedAtStr == null) return null;
+      final savedAt = DateTime.tryParse(savedAtStr);
+      if (savedAt == null || DateTime.now().difference(savedAt) > _persistentCacheMaxAge) return null;
+      final chunkCount = meta['chunkCount'] as int? ?? 1;
+      final list = <Customer>[];
+      for (var i = 0; i < chunkCount; i++) {
+        final chunkStr = prefs.getString('${_persistentCachePrefix}${cacheKey}_$i');
+        if (chunkStr == null || chunkStr.isEmpty) continue;
+        final chunk = jsonDecode(chunkStr) as List<dynamic>?;
+        if (chunk == null) continue;
+        for (final e in chunk) {
+          if (e is! Map) continue;
+          final map = Map<String, dynamic>.from(e);
+          list.add(Customer.fromJson(map));
+        }
+      }
+      if (list.isEmpty) return null;
+      debugPrint('📂 [영구캐시] 로드: ${list.length}건 (저장: $savedAtStr)');
+      return list;
+    } catch (e) {
+      debugPrint('⚠️ [영구캐시] 로드 실패: $e');
+      return null;
+    }
+  }
+
+  /// 영구 캐시에 고객 목록 저장 (청크 단위로 저장해 용량 제한 회피)
+  Future<void> _saveFilteredToPersistentCache(String cacheKey, List<Customer> list) async {
+    if (list.isEmpty) return;
+    try {
+      final prefs = await _prefs();
+      final maps = <Map<String, dynamic>>[];
+      for (final c in list) {
+        final m = c.toJson();
+        if (c.createdAt != null) m['createdAt'] = c.createdAt!.toIso8601String();
+        maps.add(m);
+      }
+      var chunkIndex = 0;
+      var chunk = <Map<String, dynamic>>[];
+      var chunkLen = 0;
+      final savedAt = DateTime.now().toIso8601String();
+      for (final m in maps) {
+        final s = jsonEncode(m);
+        if (chunkLen + s.length > _persistentChunkMaxChars && chunk.isNotEmpty) {
+          await prefs.setString('${_persistentCachePrefix}${cacheKey}_$chunkIndex', jsonEncode(chunk));
+          chunkIndex++;
+          chunk = [];
+          chunkLen = 0;
+        }
+        chunk.add(m);
+        chunkLen += s.length;
+      }
+      if (chunk.isNotEmpty) {
+        await prefs.setString('${_persistentCachePrefix}${cacheKey}_$chunkIndex', jsonEncode(chunk));
+        chunkIndex++;
+      }
+      await prefs.setString('${_persistentCachePrefix}${cacheKey}_meta', jsonEncode({
+        'savedAt': savedAt,
+        'chunkCount': chunkIndex,
+      }));
+      debugPrint('📂 [영구캐시] 저장: ${list.length}건, ${chunkIndex}청크');
+    } catch (e) {
+      debugPrint('⚠️ [영구캐시] 저장 실패: $e');
+    }
+  }
+
+  /// Firestore에서 최신 데이터 로드 후 메모리·영구 캐시 갱신 (백그라운드, UI 블로킹 없음)
+  Future<void> _refreshFilteredInBackground(User? user) async {
+    final cacheKey = user?.id ?? 'guest';
+    try {
+      var all = await _loadAll();
+      final userId = _authService?.currentUser?.id;
+      if (userId != null) {
+        final favKeys = await _getFavoritesFromFirestore(userId);
+        all = all.map((c) => favKeys.contains(c.customerKey) ? c.copyWith(isFavorite: true) : c).toList();
+      }
+      final filtered = PermissionService.filterByScope(user, all, feature: AccessFeature.customer);
+      final now = DateTime.now();
+      _filteredCache[cacheKey] = _FilteredCacheEntry(List<Customer>.from(filtered), now.add(_filteredCacheTtl));
+      await _saveFilteredToPersistentCache(cacheKey, filtered);
+      debugPrint('🔄 [영구캐시] 백그라운드 갱신 완료: ${filtered.length}건');
+    } catch (e) {
+      debugPrint('⚠️ [영구캐시] 백그라운드 갱신 실패: $e');
+    }
+  }
 
   /// Firestore에서 고객 목록 로드 (동기화된 단일 소스 — 로컬 폴백 없음)
   Future<List<Customer>> _loadAll() async {
@@ -157,7 +283,27 @@ class CustomerRepository {
   }
 
   /// RBAC: 고객사 기능 접근레벨 적용 (일반/스탭=본부, 관리자=전체)
+  /// 1) 메모리 캐시 → 2) 영구 캐시(로컬) → 3) Firestore. 영구 캐시 히트 시 바로 반환 후 백그라운드에서 최신 데이터 갱신.
   Future<List<Customer>> getFiltered(User? user) async {
+    final cacheKey = user?.id ?? 'guest';
+    final now = DateTime.now();
+    final entry = _filteredCache[cacheKey];
+    if (entry != null && entry.expiresAt.isAfter(now)) {
+      debugPrint('🔍 [RBAC] getFiltered 메모리 캐시 히트: ${entry.data.length}건 (${cacheKey})');
+      return List<Customer>.from(entry.data);
+    }
+
+    if (!_persistentCacheInvalidated) {
+      final persistent = await _loadFilteredFromPersistentCache(cacheKey);
+      if (persistent != null && persistent.isNotEmpty) {
+      _filteredCache[cacheKey] = _FilteredCacheEntry(List<Customer>.from(persistent), now.add(_filteredCacheTtl));
+        debugPrint('🔍 [RBAC] getFiltered 영구 캐시 반환: ${persistent.length}건 → 백그라운드 갱신 예정');
+        _refreshFilteredInBackground(user);
+        return persistent;
+      }
+    }
+
+    _persistentCacheInvalidated = false;
     var all = await _loadAll();
     final userId = _authService?.currentUser?.id;
     if (userId != null) {
@@ -167,6 +313,8 @@ class CustomerRepository {
     debugPrint('🔍 [RBAC] getFiltered(고객사) - 전체: ${all.length}건, 사용자: ${user?.id ?? "null"}, Role: ${user?.role}');
     final filtered = PermissionService.filterByScope(user, all, feature: AccessFeature.customer);
     debugPrint('🔍 [RBAC] filterByScope(고객사) 결과: ${filtered.length}건');
+    _filteredCache[cacheKey] = _FilteredCacheEntry(List<Customer>.from(filtered), now.add(_filteredCacheTtl));
+    await _saveFilteredToPersistentCache(cacheKey, filtered);
     return filtered;
   }
 
@@ -221,6 +369,7 @@ class CustomerRepository {
     for (final key in directKeysBefore) {
       if (replaced.any((c) => c.customerKey == key)) await setSource(key, 'direct');
     }
+    invalidateFilteredCache();
     debugPrint('✅ [REPLACE] Firestore 고객 수: ${replaced.length}건, 수기등록 유지: ${directKeysBefore.length}건');
 
     return MergeResult(
@@ -237,18 +386,21 @@ class CustomerRepository {
   Future<void> setStatus(String customerKey, String status) async {
     final docId = _docId(customerKey);
     await _customersRef.doc(docId).set({'salesStatus': status}, SetOptions(merge: true));
+    invalidateFilteredCache();
   }
 
   /// 메모 변경 — Firestore에만 저장 (동기화)
   Future<void> setMemo(String customerKey, String memo) async {
     final docId = _docId(customerKey);
     await _customersRef.doc(docId).set({'memo': memo}, SetOptions(merge: true));
+    invalidateFilteredCache();
   }
 
   /// 영업활동 변경 — Firestore에만 저장 (PC/모바일 동기화)
   Future<void> setSalesActivities(String customerKey, List<Map<String, dynamic>> activities) async {
     final docId = _docId(customerKey);
     await _customersRef.doc(docId).set({'salesActivities': activities}, SetOptions(merge: true));
+    invalidateFilteredCache();
   }
 
   Future<void> _setFavoriteInFirestore(String customerKey, bool value) async {
@@ -279,6 +431,7 @@ class CustomerRepository {
     final userId = _authService?.currentUser?.id;
     if (userId == null) return;
     await _firestore.collection(_collectionUserFavorites).doc(userId).set({'keys': keys.toList()});
+    invalidateFilteredCache();
   }
 
   /// 즐겨찾기 로드 — Firestore에서만 조회
@@ -347,6 +500,7 @@ class CustomerRepository {
     for (final key in directKeysBefore) {
       if (merged.values.any((c) => c.customerKey == key)) await setSource(key, 'direct');
     }
+    invalidateFilteredCache();
     return MergeResult(
       total: parsed.length,
       success: success,
@@ -397,6 +551,7 @@ class CustomerRepository {
       if (newCustomer.salesStatus.isNotEmpty) await setStatus(customerKey, newCustomer.salesStatus);
       if (newCustomer.memo.isNotEmpty) await setMemo(customerKey, newCustomer.memo);
 
+      invalidateFilteredCache();
       debugPrint('✅ 고객 ${isDuplicate ? "업데이트" : "생성"} 완료 (Firestore): $customerKey');
       return (true, isDuplicate, customerToSave);
     } catch (e) {

@@ -2,7 +2,9 @@
 
 ## 🚨 오류: `[firebase_storage/unauthorized] User is not authorized`
 
-이 오류는 Firebase Storage 보안 규칙에서 `home_promotions` 경로에 대한 권한이 없어서 발생합니다.
+이 오류는 Firebase Storage 보안 규칙에서 해당 경로에 대한 쓰기 권한이 없어서 발생합니다.
+- **CSV 대용량 업로드**(1MB 초과) 시 사용하는 경로: `csv_files/파일명`
+- 배너 이미지 경로: `home_promotions/파일명`
 
 **⚠️ 중요**: 현재 프로젝트는 Firebase Authentication을 사용하지 않고 SharedPreferences 기반 인증을 사용합니다. 따라서 `request.auth != null` 조건이 항상 false가 됩니다.
 
@@ -20,7 +22,11 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // CSV 파일 경로
+    // CSV 파일 경로 (관리자 업로드 - 1MB 초과 시 사용)
+    match /csv_files/{filename} {
+      allow read, write: if true;
+    }
+    // 레거시 CSV 경로
     match /csv/{filename} {
       allow read, write: if true;
     }
@@ -57,7 +63,12 @@ service firebase.storage {
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // CSV 파일 경로
+    // CSV 파일 경로 (1MB 초과 대용량 업로드)
+    match /csv_files/{filename} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null 
+        && request.auth.token.role == 'admin';
+    }
     match /csv/{filename} {
       allow read: if request.auth != null;
       allow write: if request.auth != null 
