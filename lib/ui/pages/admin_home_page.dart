@@ -677,15 +677,10 @@ class _UploadCardState extends State<_UploadCard> {
           if (errorRows.isNotEmpty) errorRowsForDownload = _buildErrorRowsForDownload(rows);
 
           final repo = context.read<CustomerRepository>();
-          if (_replaceAll) {
-            await repo.saveAll(valid);
-            inserted = valid.length;
-            updated = 0;
-          } else {
-            final mr = await repo.mergeFromCsv(valid, updateOnDuplicate: _updateOnDuplicate);
-            inserted = mr.success;
-            updated = mr.updated;
-          }
+          // CSV 업로드는 업로드 파일 기준으로 전부 덮어쓰기 (replaceFromCsv)
+          final mr = await repo.replaceFromCsv(valid);
+          inserted = mr.success;
+          updated = 0;
           break;
         }
 
