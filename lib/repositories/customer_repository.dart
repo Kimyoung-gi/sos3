@@ -369,7 +369,7 @@ class CustomerRepository {
     for (final key in directKeysBefore) {
       if (replaced.any((c) => c.customerKey == key)) await setSource(key, 'direct');
     }
-    invalidateFilteredCache();
+    await invalidateFilteredCache();
     debugPrint('✅ [REPLACE] Firestore 고객 수: ${replaced.length}건, 수기등록 유지: ${directKeysBefore.length}건');
 
     return MergeResult(

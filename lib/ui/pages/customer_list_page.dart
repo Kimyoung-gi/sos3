@@ -6,9 +6,7 @@ import '../../repositories/customer_repository.dart';
 import '../../utils/customer_converter.dart';
 import '../../main.dart' show CustomerData, CustomerDetailScreen;
 import '../../services/auth_service.dart';
-import '../../services/csv_service.dart';
 import '../../services/csv_reload_bus.dart';
-import '../../utils/csv_parser_extended.dart';
 import '../theme/app_colors.dart';
 import '../widgets/page_menu_title.dart';
 import '../theme/app_dimens.dart';
@@ -170,22 +168,7 @@ class _CustomerListPageState extends State<CustomerListPage> {
       final customerRepo = context.read<CustomerRepository>();
       final currentUser = authService.currentUser;
       
-      // 초기 로딩 시에만 CSV 로드 (merge 사용: 고객사 등록으로 추가한 데이터가 유지되도록)
-      if (_isInitialLoad) {
-        try {
-          final csvText = await CsvService.load('customerlist.csv');
-          if (csvText.isNotEmpty) {
-            final rows = CsvParserExtended.parseCustomerBase(csvText);
-            final validCustomers = rows.where((r) => r.data != null).map((r) => r.data!).toList();
-            if (validCustomers.isNotEmpty) {
-              await customerRepo.mergeFromCsv(validCustomers, updateOnDuplicate: true);
-            }
-          }
-        } catch (e) {
-          debugPrint('⚠️ customerlist.csv 로드 실패 (무시): $e');
-        }
-      }
-      
+      // 고객 목록은 Firestore만 사용. CSV 반영은 관리자 업로드 시 replaceFromCsv로만 수행 (덮어쓰기).
       // RBAC 필터링된 고객 목록 가져오기
       final customers = await customerRepo.getFiltered(currentUser);
       
